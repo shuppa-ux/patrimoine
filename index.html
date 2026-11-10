@@ -227,7 +227,6 @@ const X=P.map(p=>[P.length>1?10+(p[0]-t0)/sp*(W-20):W/2,H-18-(p[1]-mn)/rg*(H-42)
 return`<svg viewBox="0 0 ${W} ${H}" width="100%"><path d="${d}L${X[X.length-1][0]} ${H-8}L${X[0][0]} ${H-8}Z" fill="var(--ac)" opacity=".14"/><path d="${d}" fill="none" stroke="var(--ac)" stroke-width="2.5" stroke-linejoin="round"/>${X.map(p=>`<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="var(--ac)"/>`).join('')}</svg><div class="ft mut s"><span>${fd(t0)}</span><span>${P.length>1?fd(t1):'première mesure'}</span></div>`}
 IC.ai='<path d="M12 2l2.2 6.3L21 10l-6.8 1.7L12 18l-2.2-6.3L3 10l6.8-1.7z"/><circle cx="19" cy="19" r="2.5"/>';
 
-// --- LE MOTEUR IA ---
 let CH=[],BUSY=false;
 async function askAI(prompt, isImg=false, imgData=null){
   if(!S.apiKey) return "⚠️ Clé API DeepSeek manquante dans Réglages.";
