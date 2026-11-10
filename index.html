@@ -45,7 +45,7 @@ table td,table th{padding:5px 3px;border-top:1px solid var(--bd)}
 @media print{:root{--bg:#fff;--card:#fff;--tx:#000;--mut:#555;--bd:#ddd;--ac:#8a5a10}body{padding:0}#nav,#fab,header,.mn,.noprint{display:none!important}.card{break-inside:avoid}}
 </style></head><body><div id="app"></div><button id="fab" onclick="go('quick')" style="display:none">+</button><nav id="nav"></nav><div id="dr"></div>
 <script id="app-js">
-const K='patrimoine-v13',COL=['#f0c08a','#3ccf86','#6f7bf0','#d46bd8','#f2813c','#2fb5c9'];
+const K='patrimoine-v15',COL=['#f0c08a','#3ccf86','#6f7bf0','#d46bd8','#f2813c','#2fb5c9'];
 const $=s=>document.querySelector(s);
 function def(){return{accs:[{id:'pea',n:'PEA',l:[{id:'pea1',n:'Titres'},{id:'pea2',n:'Espèces'}]},{id:'cto1',n:'CTO – part 1',l:[{id:'c11',n:'Titres'},{id:'c12',n:'Espèces'}]},{id:'cto2',n:'CTO – part 2',l:[{id:'c21',n:'Titres'},{id:'c22',n:'Espèces'}]},{id:'liv',n:'Livret A',l:[{id:'liv1',n:'Solde'}]}],m:{},apiKey:''}}
 function load(){try{const r=localStorage.getItem(K);if(r){const o=JSON.parse(r);if(o&&Array.isArray(o.accs)&&o.m&&typeof o.m=='object')return o}}catch(e){}return def()}
@@ -152,7 +152,6 @@ if(bs>50)T(X,'Besoins supérieurs à 50 %',`Tes besoins représentent ${f(bs)} %
 if(mens>35)T(X,'Taux d’endettement élevé',`Tes mensualités pèsent ${f(mens)} % de tes revenus, au-dessus du seuil usuel de 35 %.`)}
 else T('Info','Complète ton budget','Renseigne tes revenus et tes dépenses dans Budget pour obtenir des conseils personnalisés.');if((S.loans||[]).some(x=>x.cap>=50000)&&!S.accs.some(a=>/maison|immo|bien|appart|logement|terrain/i.test(a.n)))T('Info','Ajoute la valeur de ton bien','Tu as un crédit important mais aucun compte immobilier : crée un compte « Maison » avec sa valeur estimée pour que ton patrimoine net soit juste.');
 if(keys().length>=2&&(!S.bk||Date.now()-S.bk>2592e6))T('Info','Pense à sauvegarder','Tes données sont stockées sur cet appareil uniquement. Copie ta sauvegarde depuis Plus de temps en temps.');
-plTips(T,X);
 return r}
 function tipsCard(){const r=tips();if(!r.length)return'';return`<div class="card"><h3>Conseils <span class="mut s">${r.length}</span></h3>${r.map(x=>`<div style="border-top:1px solid var(--bd);padding:10px 0"><span class="pill ${x[0]=='À examiner'?'on':''}">${x[0]}</span> <b>${x[1]}</b><p class="s mut" style="margin:6px 0 0">${x[2]}</p></div>`).join('')}</div>`}
 function quick(){return`<button class="back" onclick="go('accs')">← Comptes</button><div class="card"><h3>Mise à jour rapide · ${mlabel(cur)}</h3><p class="s mut" style="margin:0">Mets à jour tous tes soldes d’un coup. Total : <b>${eur(tot(cur))}</b></p></div>`+S.accs.map((a,i)=>`<div class="card"><div class="ft"><b><i class="dot" style="background:${COL[i%6]}"></i>${esc(a.n)}</b><b>${eur(at(cur,a))}</b></div>${a.l.map(l=>`<div class="ln" style="margin-top:8px"><span style="flex:1;align-self:center" class="s">${esc(l.n)}</span><input class="vl" inputmode="decimal" value="${lv(cur,l.id)||''}" placeholder="0" oninput="sv('${l.id}',this.value,1)" onchange="sv('${l.id}',this.value)"></div>`).join('')}<div class="ln" style="margin-top:8px"><span style="flex:1;align-self:center" class="s mut">Versement du mois</span><input class="vl" inputmode="decimal" value="${dep(cur,a)||''}" placeholder="0" oninput="sd('${a.id}',this.value,1)" onchange="sd('${a.id}',this.value)"></div><button class="btn" style="margin-top:8px" onclick="al('${a.id}')">+ Ajouter un titre ou une ligne</button></div>`).join('')}
@@ -168,7 +167,7 @@ const nets=ks.map(k=>bm(k).r-cs(k)-epg(k)),L=liq(cur),lo=qt(nets,.25),md=qt(nets
 return`<p class="s mut">Liquidités actuelles : <b>${eur(L)}</b> · net mensuel médian : <b>${eur(md)}</b> (sur ${ks.length} mois)</p>`+[1,3,6,12].map(k=>`<div class="row" style="cursor:default"><span>Dans ${k} mois</span><span><b>${eur(L+md*k)}</b><br><span class="s mut">entre ${eur(L+lo*k)} et ${eur(L+hi*k)}</span></span></div>`).join('')}
 function irr(){const ks=keys();if(ks.length<2)return null;const f=ks[0],l=ks[ks.length-1],C=[[0,-tot(f)]];ks.slice(1).forEach(k=>C.push([mm(f,k),-S.accs.reduce((s,a)=>s+dep(k,a),0)]));C.push([mm(f,l),tot(l)]);
 const N=r=>C.reduce((s,c)=>s+c[1]/Math.pow(1+r,c[0]),0);let a=-.5,b=.5;if(N(a)*N(b)>0)return null;for(let i=0;i<80;i++){const m=(a+b)/2;N(a)*N(m)<=0?b=m:a=m}return Math.pow(1+(a+b)/2,12)-1}
-function rd(){const x=irr(),ks=keys();return x==null||mm(ks[0],ks[ks.length-1])<6?'<span class="mut s">dès 6 mois d’historique</span>':`<span class="${x>=0?'up':'dn'}">${pct(x*100)}</span>`}
+function rd(){const x=irr(),ks=keys();if(!ks.length||x==null||mm(ks[0],ks[ks.length-1])<6)return'<span class="mut s">dès 6 mois d’historique</span>';return`<span class="${x>=0?'up':'dn'}">${pct(x*100)}</span>`}
 function sim(){const s=SM(),r=cmp().sort((a,b)=>b[3]-a[3]),mx=r[0][3]||1;
 const f=(k,l)=>`<label class="s mut" style="flex:1;min-width:45%">${l}<input class="w" style="margin:2px 0 0" inputmode="decimal" value="${s[k]}" onchange="ss('${k}',this.value)"></label>`;
 return`<button class="btn" style="margin:0 0 12px" onclick="go('tax')">🧾 Calculer mon impôt sur le revenu</button><div class="card"><h3>Comparateur de placements</h3><div style="display:flex;gap:6px;margin-bottom:8px">${[[4,'Prudent 4 %'],[7,'Équilibré 7 %'],[10,'Dynamique 10 %']].map(r=>`<button class="pill ${s.etf==r[0]?'on':''}" onclick="ss('etf',${r[0]})">${r[1]}</button>`).join('')}</div><div style="display:flex;flex-wrap:wrap;gap:8px">${f('A','Montant à placer (€)')}${f('M','Versement mensuel (€)')}${f('Y','Horizon (années)')}${f('etf','Rendement brut ETF (%/an)')}${f('fee','Frais ETF (%/an)')}${f('liv','Livret A (%/an)')}${f('fe','Fonds euros (%/an)')}</div>
@@ -195,7 +194,7 @@ const IC={home:'<rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3
 function ana(){const t=tot(cur),n=S.accs.length,sc=t>0&&n>1?10*(1-S.accs.reduce((s,a)=>s+Math.pow(at(cur,a)/t,2),0))/(1-1/n):0,
 lv2=S.accs.filter(a=>/livret|ldds|lep/i.test(a.n)).reduce((s,a)=>s+at(cur,a),0),L=liq(cur),sp=cs(cur),rev=bm(cur).r,mens=(S.loans||[]).reduce((s,x)=>s+lc(x).mens+(x.ass||0),0),f=n=>n.toFixed(1).replace('.',',');
 const K=(l,v,s)=>`<div class="card" style="margin:0"><div class="mut s">${l}</div><div style="font-size:26px;font-weight:700;margin:6px 0">${v}</div><div class="s mut">${s}</div></div>`;
-return`<h2 style="margin:4px 0 12px;font-size:28px">Analyse</h2>`+tipsCard()+`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">${K('Diversification',f(sc)+'/10','répartition entre tes comptes')}${K('Intérêts des livrets',eur(lv2*SM().liv/100),'par an, à '+SM().liv+' %')}${K('Épargne de précaution',sp>0?f(L/sp)+' mois':'—','cible : 6 mois de dépenses')}${K('Taux d’endettement',rev>0?(mens/rev*100).toFixed(0)+' %':'—','seuil usuel : 35 %')}${K('Taux d’épargne',rev>0?(epg(cur)/rev*100).toFixed(0)+' %':'—','cible : 20 %')}${K('Dettes / patrimoine',t>0?(debt()/t*100).toFixed(0)+' %':'—','part du brut')}</div>`+feeCard()+divCard()+goals()+goal()+`<div style="display:flex;gap:8px;margin-bottom:8px"><button class="btn" style="margin:0" onclick="go('sim')">🧮 Simulateurs</button><button class="btn" style="margin:0" onclick="go('tax')">🧾 Impôts</button></div><button class="btn" style="margin:0 0 8px" onclick="go('plac')">📈 Placements & plafonds</button><button class="btn" onclick="go('rep')">📄 Exporter un rapport PDF</button>`}
+return`<h2 style="margin:4px 0 12px;font-size:28px">Analyse</h2>`+tipsCard()+`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">${K('Diversification',f(sc)+'/10','répartition entre tes comptes')}${K('Intérêts des livrets',eur(lv2*SM().liv/100),'par an, à '+SM().liv+' %')}${K('Épargne de précaution',sp>0?f(L/sp)+' mois':'—','cible : 6 mois de dépenses')}${K('Taux d’endettement',rev>0?(mens/rev*100).toFixed(0)+' %':'—','seuil usuel : 35 %')}${K('Taux d’épargne',rev>0?(epg(cur)/rev*100).toFixed(0)+' %':'—','cible : 20 %')}${K('Dettes / patrimoine',t>0?(debt()/t*100).toFixed(0)+' %':'—','part du brut')}</div>`+feeCard()+divCard()+goals()+goal()+`<div style="display:flex;gap:8px;margin-bottom:8px"><button class="btn" style="margin:0" onclick="go('sim')">🧮 Simulateurs</button><button class="btn" style="margin:0" onclick="go('tax')">🧾 Impôts</button></div><button class="btn" style="margin:0 0 8px" onclick="go('rep')">📄 Exporter un rapport PDF</button>`}
 const GL=()=>S.goals||(S.goals=[]);
 function ag(){const n=$('#gn').value.trim(),t=num($('#gt').value);if(!n||t<=0)return;GL().push({id:uid(),n,t,s:num($('#gs').value),d:$('#gd').value||addM(cur,12)});save();draw()}
 function ug(id,v){GL().find(g=>g.id==id).s=num(v);save();draw()}
@@ -245,8 +244,9 @@ async function askAI(prompt, isImg=false, imgData=null){
     if(txt.includes('[ACTION:')){
       try {
         let a = JSON.parse(txt.split('[ACTION:')[1].split(']')[0]);
-        S.m[cur].expenses = S.m[cur].expenses || {};
-        S.m[cur].expenses[a.label] = (S.m[cur].expenses[a.label] || 0) + a.amount;
+        S.bud = S.bud || {};
+        S.bud[cur] = S.bud[cur] || {r:0, c:{}};
+        S.bud[cur].c[a.label] = (S.bud[cur].c[a.label] || 0) + a.amount;
         save(); return `✅ Dépense enregistrée : ${esc(a.label)} (${eur(a.amount)})`;
       } catch(e) { return txt; }
     }
@@ -265,19 +265,6 @@ function drawChat(){
     scrollTo(0,document.body.scrollHeight);
   }
 }
-function goAI() {
-  tab='ai';
-  draw();
-}
-async function sendAI(){
-  const i=$('#ci'), t=i.value.trim();
-  if(!t||BUSY) return;
-  i.value=''; CH.push({r:'u',t}); drawChat();
-  BUSY=true;
-  const res = await askAI(t);
-  CH.push({r:'a',t:res});
-  BUSY=false; drawChat();
-}
 function ai(){
   return `<h2 style="margin:4px 0 12px;font-size:28px">Assistant</h2>
   <div id="ch" class="ch">${chatHTML()}</div>
@@ -287,9 +274,18 @@ function ai(){
     <button onclick="sendAI()">➤</button>
   </div>`;
 }
+async function sendAI(){
+  const i=$('#ci'), t=i.value.trim();
+  if(!t||BUSY) return;
+  i.value=''; CH.push({r:'u',t}); drawChat();
+  BUSY=true;
+  const res = await askAI(t);
+  CH.push({r:'a',t:res});
+  BUSY=false;
+  try { localStorage.setItem(K, JSON.stringify(S)); } catch(e){}
+  drawChat();
+}
 
-function setV(a,id,v,m){const l=fln(a,id);m=m||cur;ensure(m);delete S.m[m].c;S.m[m].v[l.id]=num(v);snap();save()}
-function srev(v){W().r=num(v);save()}
 function sv(id,v,q){ensure(cur);S.m[cur].v[id]=num(v);save();if(!q)draw()}
 function sd(id,v,q){ensure(cur);S.m[cur].d[id]=num(v);save();if(!q)draw()}
 const A=id=>S.accs.find(x=>x.id==id);
@@ -305,10 +301,27 @@ function exportData(){let d="data:text/json;charset=utf-8,"+encodeURIComponent(J
 function importData(i){let f=i.files[0];if(!f)return;let r=new FileReader();r.onload=e=>{try{let d=JSON.parse(e.target.result);if(d.accs){S=d;save();alert('Restauré !')}}catch(x){alert('Erreur')}};r.readAsText(f)}
 
 function draw(){
+  let view = '';
+  if(tab==='home') view = home();
+  else if(tab==='accs') view = accs();
+  else if(tab==='tax') view = impots();
+  else if(tab==='ai') view = ai();
+  else if(tab==='set') view = set();
+  else if(tab==='quick') view = quick();
+  else if(tab==='bud') view = bud();
+  else if(tab==='cred') view = cred();
+  else if(tab==='sim') view = sim();
+  else if(tab==='hist') view = hist();
+  else if(tab==='ana') view = ana();
+  else if(tab==='rep') view = rep();
+  else if(A(tab)) view = acc(A(tab));
+  else view = home();
+
   document.getElementById('app').innerHTML=`
-  <header><button class="av" onclick="drawer(1)">☰</button><h1>${tab==='home'?'Synthèse':tab==='accs'?'Comptes':tab==='tax'?'Impôts':tab==='ai'?'Assistant':tab==='set'?'Réglages':'Patrimoine'}</h1><button class="av" onclick="S.hide=!S.hide;save()">${S.hide?'🙈':'👁'}</button></header>
+  <header><button class="av" onclick="drawer(1)">☰</button><h1>${tab==='home'?'Synthèse':tab==='accs'?'Comptes':tab==='tax'?'Impôts':tab==='ai'?'Assistant':tab==='set'?'Réglages':tab==='bud'?'Budget':tab==='cred'?'Crédits':tab==='sim'?'Simulateurs':tab==='hist'?'Historique':tab==='ana'?'Analyse':tab==='rep'?'Rapport':'Patrimoine'}</h1><button class="av" onclick="S.hide=!S.hide;save()">${S.hide?'🙈':'👁'}</button></header>
   <div class="mn"><button onclick="setM(addM(cur,-1))">‹</button><label class="mp">${mlabel(cur)} ▾<input type="month" value="${cur}" onchange="setM(this.value)"></label><button onclick="setM(addM(cur,1))">›</button></div>
-  ${tab==='home'?home():tab==='accs'?accs():tab==='tax'?tax():tab==='ai'?ai():tab==='set'?set():tab==='quick'?quick():A(tab)?acc(A(tab)):home()}`;
+  ${view}`;
+  
   $('#nav').innerHTML=[['home','Synthèse'],['accs','Comptes'],['tax','Impôts'],['ai','Assistant']].map(t=>`<button class="${t[0]==tab?'on':''}" onclick="go('${t[0]}')"><svg viewBox="0 0 24 24">${t[0]==='home'?'<rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/>':t[0]==='accs'?'<rect x="4" y="10" width="4" height="10" rx="2"/><rect x="10" y="4" width="4" height="16" rx="2"/><rect x="16" y="13" width="4" height="7" rx="2"/>':t[0]==='tax'?'<rect x="3" y="3" width="18" height="18" rx="5"/><path d="M8 9h8M8 15h5" stroke="var(--card)" stroke-width="2" stroke-linecap="round"/>':'<path d="M12 2l2.2 6.3L21 10l-6.8 1.7L12 18l-2.2-6.3L3 10l6.8-1.7z"/>'}</svg>${t[1]}</button>`).join('');
   $('#fab').style.display=['home','accs'].includes(tab)?'block':'none';
   drawChat();
@@ -319,7 +332,7 @@ function accs(){return`<div class="card"><h3>Mes Comptes</h3>${list()}</div>`+ad
 function tax(){return`<div class="card"><h3>Simulateur d'Impôt</h3><input id="taxRev" type="number" placeholder="Revenu net imposable (€)" oninput="calcT()"><div class="big" id="taxOut" style="text-align:center;margin-top:12px">0 €</div></div><div class="card"><h3>Plafonds</h3><div class="row" style="cursor:default"><span>PEA</span><b>${eur(150000)}</b></div><div class="row" style="cursor:default"><span>Livret A</span><b>${eur(22950)}</b></div></div>`}
 function calcT(){let q=num($('#taxRev').value),tax=0,prev=0;for(let b of [[11600,0],[29579,.11],[84577,.3],[181917,.41],[1e12,.45]]){let tx=Math.max(0,Math.min(q,b[0])-prev);tax+=tx*b[1];prev=b[0];if(q<=b[0])break}if(tax<2500)tax-=Math.max(0,897-0.4525*tax);$('#taxOut').textContent=eur(Math.max(0,Math.round(tax)))}
 
-function drawer(o){const e=document.getElementById('dr');if(!o){e.innerHTML='';return}e.innerHTML=`<div class="dro" onclick="drawer(0)"></div><div class="drp"><h2 style="margin:0 0 10px;color:var(--ac)">Menu</h2>${[['home','🏠 Synthèse'],['accs','💳 Comptes'],['tax','🧾 Impôts'],['ai','✨ Assistant'],['set','⚙️ Réglages']].map(m=>`<button class="dri ${m[0]==tab?'on':''}" onclick="drawer(0);go('${m[0]}')"><span>${m[1]}</span></button>`).join('')}</div>`}
+function drawer(o){const e=document.getElementById('dr');if(!o){e.innerHTML='';return}e.innerHTML=`<div class="dro" onclick="drawer(0)"></div><div class="drp"><h2 style="margin:0 0 10px;color:var(--ac)">Menu</h2>${[['home','🏠 Synthèse'],['accs','💳 Comptes'],['bud','🥧 Budget'],['cred','🏦 Crédits'],['tax','🧾 Impôts'],['sim','🧮 Simulateurs'],['ana','🔍 Analyse'],['ai','✨ Assistant'],['set','⚙️ Réglages']].map(m=>`<button class="dri ${m[0]==tab?'on':''}" onclick="drawer(0);go('${m[0]}')"><span>${m[1]}</span></button>`).join('')}</div>`}
 
 ensure(cur);draw();
 </script></body></html>
