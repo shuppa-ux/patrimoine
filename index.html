@@ -43,9 +43,15 @@ table td,table th{padding:5px 3px;border-top:1px solid var(--bd)}
 .ch{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}.bb{max-width:88%;padding:10px 14px;border-radius:18px;font-size:15px;white-space:pre-wrap;word-break:break-word}.bu{align-self:flex-end;background:var(--ac);color:var(--on)}.ba{align-self:flex-start;background:var(--card);border:1px solid var(--bd)}
 .cin{position:fixed;left:10px;right:10px;bottom:calc(84px + env(safe-area-inset-bottom,0px));display:flex;gap:8px;align-items:center}.cin input:not([type=file]){flex:1;min-width:0;border-radius:999px;padding:12px 16px}.cin>button{border-radius:50%;width:46px;height:46px;border:0;background:var(--ac);color:var(--on);font-size:20px}
 @media print{:root{--bg:#fff;--card:#fff;--tx:#000;--mut:#555;--bd:#ddd;--ac:#8a5a10}body{padding:0}#nav,#fab,header,.mn,.noprint{display:none!important}.card{break-inside:avoid}}
-</style></head><body><div id="app"></div><button id="fab" onclick="go('quick')" style="display:none">+</button><nav id="nav"></nav><div id="dr"></div>
+</style>
+<script>
+window.onerror = function(m, s, l, c, e) {
+  document.body.innerHTML = '<div style="padding:20px;color:white;background:#111;font-family:sans-serif;font-size:16px;"><h2 style="color:#ff6f66">Oups, une erreur est survenue</h2><p>'+m+'</p><p>Ligne: '+l+'</p><p>Copie ce message pour le corriger.</p></div>';
+};
+</script>
+</head><body><div id="app"></div><button id="fab" onclick="go('quick')" style="display:none">+</button><nav id="nav"></nav><div id="dr"></div>
 <script id="app-js">
-const K='patrimoine-v15',COL=['#f0c08a','#3ccf86','#6f7bf0','#d46bd8','#f2813c','#2fb5c9'];
+const K='patrimoine-v16',COL=['#f0c08a','#3ccf86','#6f7bf0','#d46bd8','#f2813c','#2fb5c9'];
 const $=s=>document.querySelector(s);
 function def(){return{accs:[{id:'pea',n:'PEA',l:[{id:'pea1',n:'Titres'},{id:'pea2',n:'Espèces'}]},{id:'cto1',n:'CTO – part 1',l:[{id:'c11',n:'Titres'},{id:'c12',n:'Espèces'}]},{id:'cto2',n:'CTO – part 2',l:[{id:'c21',n:'Titres'},{id:'c22',n:'Espèces'}]},{id:'liv',n:'Livret A',l:[{id:'liv1',n:'Solde'}]}],m:{},apiKey:''}}
 function load(){try{const r=localStorage.getItem(K);if(r){const o=JSON.parse(r);if(o&&Array.isArray(o.accs)&&o.m&&typeof o.m=='object')return o}}catch(e){}return def()}
