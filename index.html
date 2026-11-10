@@ -51,10 +51,31 @@ window.onerror = function(m, s, l, c, e) {
 </script>
 </head><body><div id="app"></div><button id="fab" onclick="go('quick')" style="display:none">+</button><nav id="nav"></nav><div id="dr"></div>
 <script id="app-js">
-const K='patrimoine-v19',COL=['#f0c08a','#3ccf86','#6f7bf0','#d46bd8','#f2813c','#2fb5c9'];
+// ==========================================
+// 1. OUTILS ET FONCTIONS DE BASE
+// ==========================================
+const K='patrimoine-v20',COL=['#f0c08a','#3ccf86','#6f7bf0','#d46bd8','#f2813c','#2fb5c9'];
 const $=s=>document.querySelector(s);
+const ym=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+const addM=(m,n)=>ym(new Date(+m.slice(0,4),+m.slice(5)-1+n,1));
+const mlabel=m=>{const[y,mo]=m.split('-');return new Date(y,mo-1,1).toLocaleDateString('fr-FR',{month:'long',year:'numeric'})};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const num=v=>{const n=parseFloat(String(v).replace(/\s/g,'').replace(',','.'));return isNaN(n)?0:n};
+const uid=()=>'x'+Math.random().toString(36).slice(2,8);
+const pct=n=>(n>=0?'+':'')+n.toLocaleString('fr-FR',{maximumFractionDigits:2})+' %';
+const mm=(a,b)=>(b.slice(0,4)-a.slice(0,4))*12+(b.slice(5)-a.slice(5));
 
-function def(){return{accs:[{id:'pea',n:'PEA',l:[{id:'pea1',n:'Titres'},{id:'pea2',n:'Espèces'}]},{id:'cto1',n:'CTO – part 1',l:[{id:'c11',n:'Titres'},{id:'c12',n:'Espèces'}]},{id:'cto2',n:'CTO – part 2',l:[{id:'c21',n:'Titres'},{id:'c22',n:'Espèces'}]},{id:'liv',n:'Livret A',l:[{id:'liv1',n:'Solde'}]}],m:{},apiKey:''}}
+function def(){
+  return{
+    accs:[{id:'pea',n:'PEA',l:[{id:'pea1',n:'Titres'},{id:'pea2',n:'Espèces'}]},{id:'cto1',n:'CTO – part 1',l:[{id:'c11',n:'Titres'},{id:'c12',n:'Espèces'}]},{id:'cto2',n:'CTO – part 2',l:[{id:'c21',n:'Titres'},{id:'c22',n:'Espèces'}]},{id:'liv',n:'Livret A',l:[{id:'liv1',n:'Solde'}]}],
+    m:{},
+    apiKey:'',
+    goal:0,
+    loans:[],
+    goals:[],
+    hide:false
+  }
+}
 
 function load(){
   try{
@@ -73,8 +94,10 @@ let cur=ym(new Date());
 let armed=null;
 let CH=[];
 let BUSY=false;
-S.goal=S.goal||0;
 
+// ==========================================
+// 2. LOGIQUE DE DONNÉES
+// ==========================================
 function save(){
   S.ts=Date.now();
   try{ localStorage.setItem(K,JSON.stringify(S)); }catch(e){}
@@ -88,41 +111,63 @@ function ensure(m){
   save();
 }
 
-const ym=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
-const addM=(m,n)=>ym(new Date(+m.slice(0,4),+m.slice(5)-1+n,1));
-const mlabel=m=>{const[y,mo]=m.split('-');return new Date(y,mo-1,1).toLocaleDateString('fr-FR',{month:'long',year:'numeric'})};
 const keys=()=>Object.keys(S.m).filter(k=>!S.m[k].c).sort();
 const lv=(m,id)=>(S.m[m]&&S.m[m].v[id])||0;
 const at=(m,a)=>a.l.reduce((s,l)=>s+lv(m,l.id),0);
 const tot=m=>S.accs.reduce((s,a)=>s+at(m,a),0);
 const dep=(m,a)=>(S.m[m]&&S.m[m].d[a.id])||0;
 const prv=m=>keys().filter(k=>k<m).pop();
-const eur=(n,d=0)=>S.hide?'••••• €':n.toLocaleString('fr-FR',{style:'currency',currency:'EUR',minimumFractionDigits:d,maximumFractionDigits:d});
-const pct=n=>(n>=0?'+':'')+n.toLocaleString('fr-FR',{maximumFractionDigits:2})+' %';
-const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const num=v=>{const n=parseFloat(String(v).replace(/\s/g,'').replace(',','.'));return isNaN(n)?0:n};
-const uid=()=>'x'+Math.random().toString(36).slice(2,8);
 
+const eur=(n,d=0)=>S.hide?'••••• €':n.toLocaleString('fr-FR',{style:'currency',currency:'EUR',minimumFractionDigits:d,maximumFractionDigits:d});
 function gain(m,a){const p=prv(m);return p?at(m,a)-at(p,a)-dep(m,a):null}
 function gainT(m){const p=prv(m);return p?tot(m)-tot(p)-S.accs.reduce((s,a)=>s+dep(m,a),0):null}
 function gtxt(g,b){if(g==null)return'<span class="mut">—</span>';return`<span class="${g>=0?'up':'dn'}">${g>=0?'+':''}${eur(g)}${b>0?' ('+pct(g/b*100)+')':''}</span>`}
 
-function chartOld(f=tot){const ks=keys().slice(-(S.rng||999));if(ks.length<2)return'<p class="mut s">La courbe apparaîtra dès que deux mois seront saisis.</p>';
-const vs=ks.map(f),mn=Math.min(...vs),mx=Math.max(...vs),W=320,H=130,r=mx-mn||1;
-const P=vs.map((v,i)=>[10+i*(W-20)/(ks.length-1),H-15-(v-mn)/r*(H-35)]);
-const d=P.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join('');
-return`<svg viewBox="0 0 ${W} ${H}" width="100%"><path d="${d}L${P[P.length-1][0]} ${H-5}L${P[0][0]} ${H-5}Z" fill="var(--ac)" opacity=".14"/><path d="${d}" fill="none" stroke="var(--ac)" stroke-width="2.5" stroke-linejoin="round"/>${P.map(p=>`<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="var(--ac)"/>`).join('')}</svg><div class="ft mut s"><span>${mlabel(ks[0])}</span><span>${mlabel(ks[ks.length-1])}</span></div>`}
+const CAT=[['alim','Alimentation / courses','B'],['log','Logement & énergie','B'],['car','Carburant','B'],['ass','Assurances','B'],['sante','Santé','B'],['trans','Transports & auto','B'],['resto','Restauration','E'],['abo','Abonnements & télécoms','E'],['shop','Shopping','E'],['loi','Loisirs','E'],['aut','Autres','E']];
+const W=()=>{S.bud=S.bud||{};if(!S.bud[cur])S.bud[cur]=JSON.parse(JSON.stringify(bm(cur)));return S.bud[cur]};
+const bm=m=>{if(!S.bud)return{r:0,c:{}};if(S.bud[m])return S.bud[m];const p=Object.keys(S.bud).filter(k=>k<m).sort().pop();return p?S.bud[p]:{r:0,c:{}}};
+const cs=(m,t)=>CAT.filter(c=>!t||c[2]==t).reduce((s,c)=>s+(bm(m).c[c[0]]||0),0);
+const epg=m=>S.accs.reduce((s,a)=>s+Math.max(0,dep(m,a)),0);
 
+const LIQ=(a,l)=>/livret|ldds|lep/i.test(a.n)||/esp[eè]ces|liquid|cash|solde/i.test(l.n);
+const liq=m=>S.accs.reduce((s,a)=>s+a.l.filter(l=>LIQ(a,l)).reduce((q,l)=>q+lv(m,l.id),0),0);
+
+const SM=()=>Object.assign({A:10000,M:200,Y:10,etf:6.6,fee:.25,liv:1.7,fe:2.5},S.sim||{});
+function fv(A,M,r,y){const n=Math.round(y*12),i=Math.pow(1+r/100,1/12)-1;return A*Math.pow(1+i,n)+(i?M*(Math.pow(1+i,n)-1)/i:M*n)}
+function cmp(){const s=SM(),inv=s.A+s.M*Math.round(s.Y*12);
+const row=(n,r,tax)=>{const v=fv(s.A,s.M,r,s.Y),g=Math.max(0,v-inv),t=tax(g);return[n,v,g-t,v-t,t]};
+return[row('Livret A',s.liv,g=>0),row('Assurance-vie (fonds euros)',s.fe,g=>g*.172+(s.Y>=8?Math.max(0,g-4600)*.075:g*.128)),row('PEA (ETF actions)',s.etf-s.fee,g=>g*(s.Y>=5?.186:.314)),row('CTO (ETF actions)',s.etf-s.fee,g=>g*.314)]}
+const qt=(a,p)=>{a=a.slice().sort((x,y)=>x-y);const i=(a.length-1)*p,l=Math.floor(i);return a[l]+(a[Math.min(l+1,a.length-1)]-a[l])*(i-l)};
+
+function irr(){const ks=keys();if(ks.length<2)return null;const f=ks[0],l=ks[ks.length-1],C=[[0,-tot(f)]];ks.slice(1).forEach(k=>C.push([mm(f,k),-S.accs.reduce((s,a)=>s+dep(k,a),0)]));C.push([mm(f,l),tot(l)]);
+const N=r=>C.reduce((s,c)=>s+c[1]/Math.pow(1+r,c[0]),0);let a=-.5,b=.5;if(N(a)*N(b)>0)return null;for(let i=0;i<80;i++){const m=(a+b)/2;N(a)*N(m)<=0?b=m:a=m}return Math.pow(1+(a+b)/2,12)-1}
+function rd(){const x=irr(),ks=keys();if(!ks.length||x==null||mm(ks[0],ks[ks.length-1])<6)return'<span class="mut s">dès 6 mois d’historique</span>';return`<span class="${x>=0?'up':'dn'}">${pct(x*100)}</span>`}
+
+// FISCALITÉ
+let TR=[[11600,0],[29579,.11],[84577,.3],[181917,.41],[1e12,.45]];
+const TAXY={2025:{T:[11600,29579,84577,181917],qf:1807,d:[897,1483],ab:[509,14555],lab:'Revenus 2025 · impôt payé en 2026 (barème en vigueur)'},2026:{T:[11844,30200,86353,185737],qf:1845,d:[915,1513],ab:[520,14861],lab:'Revenus 2026 · impôt payé en 2027 (projet de loi de finances, pas encore voté)'}};
+const TX=()=>Object.assign({m:0,p:0,b:0,c:22,sit:1,k:0,fr:0,ni:0,y:2026},S.tax||{});
+const SEL='font:inherit;color:var(--tx);background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:8px';
+const IC={home:'<rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/>',accs:'<rect x="4" y="10" width="4" height="10" rx="2"/><rect x="10" y="4" width="4" height="16" rx="2"/><rect x="16" y="13" width="4" height="7" rx="2"/>',bud:'<rect x="3" y="3" width="18" height="18" rx="5"/><path d="M8 9h8M8 15h5" stroke="var(--card)" stroke-width="2" stroke-linecap="round"/>',ana:'<circle cx="12" cy="12" r="9"/><path d="M9 15l2-6 4-1-2 6z" fill="var(--card)"/>',sim:'<ellipse cx="12" cy="7" rx="8" ry="3.5"/><path d="M4 11c0 2 3.6 3.5 8 3.5s8-1.5 8-3.5v3.5c0 2-3.6 3.5-8 3.5s-8-1.5-8-3.5z"/>'};
+IC.ai='<path d="M12 2l2.2 6.3L21 10l-6.8 1.7L12 18l-2.2-6.3L3 10l6.8-1.7z"/><circle cx="19" cy="19" r="2.5"/>';
+const GL=()=>S.goals||(S.goals=[]);
+
+function st(k,v){S.tax=TX();S.tax[k]=num(v);save()}
+function ir1(q){let t=0,lo=0;const R=[];for(const[h,r]of TR){const b=Math.max(0,Math.min(q,h)-lo);t+=b*r;R.push([lo,h,r,b,b*r]);lo=h}return{t,R}}
+function taxc(){const x=TX(),Y=TAXY[x.y]||TAXY[2026];TR=[[Y.T[0],0],[Y.T[1],.11],[Y.T[2],.3],[Y.T[3],.41],[1e12,.45]];const brut=x.b>0?x.b:x.m*12+x.p,net=brut*(1-x.c/100),ni=x.ni>0?x.ni:net+brut*.0285,a10=Math.min(Y.ab[1],Math.max(Y.ab[0],ni*.1)),fr=x.fr>a10,ab=fr?x.fr:a10,rev=Math.max(0,Math.floor(ni-ab));
+const cpl=x.sit==2,ref=cpl?2:1,k=Math.round(x.k),P=ref+(k>=1?.5:0)+(k>=2?.5:0)+Math.max(0,k-2)+(!cpl&&k>0?.5:0);
+const a=ir1(rev/P),full=a.t*P,r0=ir1(rev/ref).t*ref,cap=(P-ref)*2*Y.qf;let imp=full,plaf=false;if(r0-full>cap){imp=r0-cap;plaf=true}
+const d0=Y.d[cpl?1:0],sc=d0/.4525;let dec=0;if(imp<sc)dec=Math.min(imp,Math.max(0,d0-.4525*imp));const due=Math.round(imp-dec);
+return{Y,brut,net,ni,ab,fr,rev,P,R:a.R,q:rev/P,imp,plaf,dec,due,tmi:(a.R.filter(q=>q[3]>0).pop()||[0,0,0])[2],moy:rev>0?due/rev:0,apres:(x.ni>0?ni:net)-due}}
+
+// ==========================================
+// 3. FONCTIONS DE RENDU (UI)
+// ==========================================
 function donut(){const t=tot(cur);if(t<=0)return'<div class="dw"><svg viewBox="0 0 100 100" width="130"><circle r="40" cx="50" cy="50" fill="none" stroke="var(--bd)" stroke-width="16"/></svg><p class="s mut">Ajoute tes comptes et tes soldes pour voir ta répartition.</p></div>';let o=0;const R=40,C=2*Math.PI*R;
 const seg=S.accs.map((a,i)=>{const f=at(cur,a)/t;const s=`<circle r="${R}" cx="50" cy="50" fill="none" stroke="${COL[i%6]}" stroke-width="16" stroke-dasharray="${f*C} ${C}" stroke-dashoffset="${-o*C}" transform="rotate(-90 50 50)"/>`;o+=f;return s}).join('');
 return`<div class="dw"><svg viewBox="0 0 100 100" width="130">${seg}</svg><div>${S.accs.map((a,i)=>`<div class="lg"><i style="background:${COL[i%6]}"></i>${esc(a.n)} <b>${(at(cur,a)/t*100).toFixed(1).replace('.',',')} %</b></div>`).join('')}</div></div>`}
 
 function list(){return S.accs.map((a,i)=>{const p=prv(cur);return`<div class="row" onclick="go('${a.id}')"><span><i class="dot" style="background:${COL[i%6]}"></i>${esc(a.n)}</span><span><b>${eur(at(cur,a))}</b><br><span class="s">${gtxt(gain(cur,a),p?at(p,a):0)}</span></span></div>`}).join('')}
-
-function home(){const t=tot(cur),p=prv(cur);
-return(tot(cur)==0&&!keys().length?'<div class="card"><h3>Bienvenue 👋</h3><p class="s">1. Ouvre <b>Comptes</b> et saisis le solde de chaque ligne (titres, espèces…).<br>2. Chaque mois, mets les soldes à jour et note tes versements.<br>3. Renseigne <b>Budget</b> et <b>Crédits</b> pour un tableau de bord complet.</p></div>':'')+`<div class="card"><div class="mut">Patrimoine net (brut − dettes)</div><div class="big">${eur(t-debt())}</div><div class="s mut">Brut ${eur(t)} · Dettes ${eur(debt())}</div><div>${p?gtxt(gainT(cur),tot(p))+' <span class="mut s">vs '+mlabel(p)+', hors versements</span>':'<span class="mut s">Premier mois saisi</span>'}</div></div>
-${kpis()}<div class="card"><h3>Évolution</h3><div style="display:flex;gap:6px;margin-bottom:8px">${[[0.25,'1S'],[1,'1M'],[3,'3M'],[6,'6M'],[12,'1A'],[0,'Tout']].map(r=>`<button class="pill ${(S.rng||0)==r[0]?'on':''}" onclick="S.rng=${r[0]};save()">${r[1]}</button>`).join('')}</div>${chart()}</div>
-<div class="card"><h3>Répartition</h3>${donut()}</div>${tipsCard()}${goal()}<div style="display:flex;gap:8px;margin-bottom:12px"><button class="btn" style="margin:0;padding:12px 4px;font-size:14px;min-width:0" onclick="go('hist')">📊 Historique</button><button class="btn" style="margin:0;padding:12px 4px;font-size:14px;min-width:0" onclick="go('sim')">🧮 Simulateurs</button><button class="btn" style="margin:0;padding:12px 4px;font-size:14px;min-width:0" onclick="go('tax')">🧾 Impôts</button></div><div hidden class="card"><h3>Répartition</h3>${donut()||'<p class="mut s">Saisis tes soldes dans l’onglet Comptes pour voir la répartition.</p>'}</div>`}
 
 function med(a){a=a.slice().sort((x,y)=>x-y);const n=a.length;return n?(n%2?a[(n-1)/2]:(a[n/2-1]+a[n/2])/2):0}
 
@@ -134,6 +179,21 @@ h+=n>=600?'<p class="mut s">Hors de portée avec ces hypothèses : augmente les 
 else h+='<p class="mut s">Indique un montant cible et un rendement annuel estimé pour obtenir une projection.</p>';
 return h+'</div>'}
 
+function chartOld(f=tot){const ks=keys().slice(-(S.rng||999));if(ks.length<2)return'<p class="mut s">La courbe apparaîtra dès que deux mois seront saisis.</p>';
+const vs=ks.map(f),mn=Math.min(...vs),mx=Math.max(...vs),W=320,H=130,r=mx-mn||1;
+const P=vs.map((v,i)=>[10+i*(W-20)/(ks.length-1),H-15-(v-mn)/r*(H-35)]);
+const d=P.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join('');
+return`<svg viewBox="0 0 ${W} ${H}" width="100%"><path d="${d}L${P[P.length-1][0]} ${H-5}L${P[0][0]} ${H-5}Z" fill="var(--ac)" opacity=".14"/><path d="${d}" fill="none" stroke="var(--ac)" stroke-width="2.5" stroke-linejoin="round"/>${P.map(p=>`<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="var(--ac)"/>`).join('')}</svg><div class="ft mut s"><span>${mlabel(ks[0])}</span><span>${mlabel(ks[ks.length-1])}</span></div>`}
+
+function snap(){const n=ym(new Date());if(cur!=n)return;S.h=S.h||[];const v=net(cur),t=Date.now(),l=S.h[S.h.length-1];if(l&&t-l.t<6e4){l.t=t;l.v=v}else S.h.push({t,v});if(S.h.length>500)S.h.shift()}
+function series(f){const now=new Date(),cm=ym(now),P=keys().filter(k=>k<cm).map(k=>[new Date(+k.slice(0,4),+k.slice(5),0,23).getTime(),f(k)]),sn=f===net?(S.h||[]).filter(x=>x.t>=new Date(now.getFullYear(),now.getMonth(),1).getTime()):[];
+if(sn.length)sn.forEach(x=>P.push([x.t,x.v]));else if(S.m[cm]&&!S.m[cm].c)P.push([+now,f(cm)]);return P.sort((a,b)=>a[0]-b[0])}
+function chart(f=net){let P=series(f);if(S.rng)P=P.filter(p=>p[0]>=Date.now()-S.rng*2.63e9);const W=320,H=140,fd=t=>new Date(t).toLocaleDateString('fr-FR',{day:'numeric',month:'short'});
+if(!P.length)return`<svg viewBox="0 0 ${W} ${H}" width="100%"><path d="M10 110C80 110 120 70 160 70S240 40 310 25" fill="none" stroke="var(--bd)" stroke-width="2" stroke-dasharray="4 5"/></svg><p class="s mut">Ta courbe se dessine dès ta première saisie, puis se met à jour à chaque modification.</p>`;
+const t0=P[0][0],t1=P[P.length-1][0],vs=P.map(p=>p[1]),mn=Math.min(...vs),mx=Math.max(...vs),rg=mx-mn||1,sp=(t1-t0)||1;
+const X=P.map(p=>[P.length>1?10+(p[0]-t0)/sp*(W-20):W/2,H-18-(p[1]-mn)/rg*(H-42)]),d=X.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join('');
+return`<svg viewBox="0 0 ${W} ${H}" width="100%"><path d="${d}L${X[X.length-1][0]} ${H-8}L${X[0][0]} ${H-8}Z" fill="var(--ac)" opacity=".14"/><path d="${d}" fill="none" stroke="var(--ac)" stroke-width="2.5" stroke-linejoin="round"/>${X.map(p=>`<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="var(--ac)"/>`).join('')}</svg><div class="ft mut s"><span>${fd(t0)}</span><span>${P.length>1?fd(t1):'première mesure'}</span></div>`}
+
 function stats(){const ks=keys();if(ks.length<2)return'';const f=ks[0],l=ks[ks.length-1];
 const dp=ks.slice(1).reduce((s,k)=>s+S.accs.reduce((q,a)=>q+dep(k,a),0),0);
 const g=tot(l)-tot(f)-dp,gs=ks.slice(1).map(k=>[k,gainT(k)]).sort((a,b)=>b[1]-a[1]);
@@ -141,15 +201,6 @@ return`<div class="card"><h3>Bilan depuis ${mlabel(f)}</h3><div class="row"><spa
 
 function hist(){const ks=keys().slice().reverse();
 return`<div class="card"><h3>Historique mensuel</h3>${ks.length<2?'<p class="mut s">Saisis au moins deux mois pour voir l’historique.</p>':''}`+ks.map(k=>{const p=prv(k),d=S.accs.reduce((s,a)=>s+dep(k,a),0);return`<div class="row" onclick="setM('${k}');go('home')"><span>${mlabel(k)}<br><span class="s mut">versé ${eur(d)}</span></span><span><b>${eur(tot(k))}</b><br><span class="s">${gtxt(gainT(k),p?tot(p):0)}</span></span></div>`}).join('')+'</div>'+stats()}
-
-const CAT=[['alim','Alimentation / courses','B'],['log','Logement & énergie','B'],['car','Carburant','B'],['ass','Assurances','B'],['sante','Santé','B'],['trans','Transports & auto','B'],['resto','Restauration','E'],['abo','Abonnements & télécoms','E'],['shop','Shopping','E'],['loi','Loisirs','E'],['aut','Autres','E']];
-const W=()=>{S.bud=S.bud||{};if(!S.bud[cur])S.bud[cur]=JSON.parse(JSON.stringify(bm(cur)));return S.bud[cur]};
-const bm=m=>{if(!S.bud)return{r:0,c:{}};if(S.bud[m])return S.bud[m];const p=Object.keys(S.bud).filter(k=>k<m).sort().pop();return p?S.bud[p]:{r:0,c:{}}};
-const cs=(m,t)=>CAT.filter(c=>!t||c[2]==t).reduce((s,c)=>s+(bm(m).c[c[0]]||0),0);
-const epg=m=>S.accs.reduce((s,a)=>s+Math.max(0,dep(m,a)),0);
-
-function sbud(k,v){W().c[k]=num(v);save()}
-function srev(v){W().r=num(v);save()}
 
 function sankey(){const b=bm(cur),rev=b.r,ep=epg(cur),it=CAT.map((c,i)=>[c[1],b.c[c[0]]||0,COL[i%6]]).filter(x=>x[1]>0);
 if(ep>0)it.push(['Épargne virée',ep,'#3ccf86']);const out=it.reduce((s,x)=>s+x[1],0),rest=rev-out;if(rest>0)it.push(['Reste',rest,'#8b93a1']);
@@ -165,16 +216,6 @@ function rule(){const r=bm(cur).r;if(r<=0)return'';return[['Besoins',cs(cur,'B')
 function mbars(){const ks=Object.keys(S.bud||{}).sort().slice(-12);if(ks.length<2)return'';const mx=Math.max(1,...ks.map(k=>Math.max(bm(k).r,cs(k),epg(k)))),w=300/ks.length,u=w/3.6;
 return`<svg viewBox="0 0 300 110" width="100%">${ks.map((k,i)=>[[bm(k).r,'var(--up)'],[cs(k),'var(--dn)'],[epg(k),'var(--ac)']].map((v,j)=>`<rect x="${i*w+j*u+2}" y="${95-v[0]/mx*90}" width="${u-1}" height="${v[0]/mx*90}" fill="${v[1]}"/>`).join('')+`<text x="${i*w+w/2}" y="107" text-anchor="middle" font-size="8" fill="var(--mut)">${k.slice(5)}</text>`).join('')}</svg><p class="s mut">Vert : revenus · rouge : dépenses · doré : épargne</p>`}
 
-function bud(){const b=bm(cur),rev=b.r,sp=cs(cur),ep=epg(cur),rest=rev-sp-ep;
-return`<div class="card"><h3>Ma réalité · ${mlabel(cur)}</h3><div class="ln"><span style="align-self:center;flex:1">Revenus du travail</span><input class="vl" inputmode="decimal" value="${rev||''}" placeholder="0" onchange="srev(this.value)"></div>
-<div class="ft" style="gap:8px"><div><div class="mut s">Dépenses</div><b class="dn">${eur(sp)}</b></div><div><div class="mut s">Épargne</div><b class="up">${eur(ep)}</b></div><div><div class="mut s">Reste</div><b class="${rest>=0?'up':'dn'}">${eur(rest)}</b></div><div><div class="mut s">Taux d’épargne</div><b>${rev>0?(ep/rev*100).toFixed(0)+' %':'—'}</b></div></div></div>
-<div class="card"><h3>Cashflow <span class="mut s">· revenus ${eur(rev)}</span></h3>${sankey()}</div>
-<div class="card"><h3>Règle 50/30/20</h3>${rule()||'<p class="mut s">Saisis tes revenus.</p>'}<p class="mut s">L’épargne correspond aux versements saisis dans l’onglet Comptes.</p></div>
-<div class="card"><h3>Dépenses par catégorie</h3>${CAT.map((c,i)=>`<div class="ln"><span style="flex:1;align-self:center"><i class="dot" style="background:${COL[i%6]}"></i>${c[1]} <span class="mut s">${c[2]=='B'?'besoin':'envie'}</span></span><input class="vl" inputmode="decimal" value="${b.c[c[0]]||''}" placeholder="0" onchange="sbud('${c[0]}',this.value)"></div>`).join('')}</div>
-<div class="card"><h3>Entrées et sorties par mois</h3>${mbars()||'<p class="mut s">Disponible dès deux mois de budget saisis.</p>'}</div>`}
-
-const mm=(a,b)=>(b.slice(0,4)-a.slice(0,4))*12+(b.slice(5)-a.slice(5));
-
 function lc(L,m=cur){const i=L.rate/1200,n=L.dur,mens=i?L.cap*i/(1-Math.pow(1+i,-n)):L.cap/n,k=Math.max(0,Math.min(n,mm(L.start,m)+1));
 const rest=Math.max(0,i?L.cap*(Math.pow(1+i,n)-Math.pow(1+i,k))/(Math.pow(1+i,n)-1):L.cap*(1-k/n));return{mens,k,rest,ip:k*mens-(L.cap-rest),ir:(n-k)*mens-rest,tot:n*mens-L.cap}}
 const debt=(m=cur)=>(S.loans||[]).reduce((s,L)=>s+lc(L,m).rest,0);
@@ -182,16 +223,6 @@ const net=m=>tot(m)-debt(m);
 
 function amort(L){const i=L.rate/1200,c=lc(L);let b=L.cap,r='';for(let t=1;t<=L.dur;t++){const it=b*i,cp=c.mens-it;b-=cp;r+=`<tr${t==c.k?' style="color:var(--ac)"':''}><td>${t}</td><td>${eur(it,2)}</td><td>${eur(cp,2)}</td><td>${eur(Math.max(0,b))}</td></tr>`}
 return`<div style="max-height:260px;overflow:auto;margin-top:8px"><table class="s" style="width:100%;border-collapse:collapse;text-align:right"><tr class="mut"><th>#</th><th>Intérêts</th><th>Capital</th><th>Restant</th></tr>${r}</table></div>`}
-
-function cred(){const Ls=S.loans||[];
-return`<div class="card"><div class="mut">Dettes restantes</div><div class="big dn">${eur(debt())}</div><div class="s mut">${Ls.length} crédit${Ls.length>1?'s':''}</div></div>`+Ls.map(L=>{const c=lc(L),p=(1-c.rest/L.cap)*100;
-return`<div class="card"><div class="ft"><b>${esc(L.n)}</b><b>${eur(c.rest)}</b></div><div class="mut s">taux ${String(L.rate).replace('.',',')} % · fin ${mlabel(addM(L.start,L.dur-1))}</div><div style="height:10px;border-radius:6px;background:var(--bd);overflow:hidden;margin:8px 0"><div style="width:${p}%;height:100%;background:var(--ac)"></div></div><p class="s">${p.toFixed(1).replace('.',',')} % remboursé sur ${eur(L.cap)} · ${L.dur-c.k} mensualités restantes</p>
-<div class="ft s"><span>Mensualité<br><b>${eur(c.mens,2)}</b></span><span>Assurance / mois<br><b>${eur(L.ass||0,2)}</b></span></div><div class="ft s" style="margin-top:8px"><span>Intérêts payés<br><b>${eur(c.ip)}</b></span><span>Intérêts restants<br><b>${eur(c.ir)}</b></span><span>Coût total<br><b>${eur(c.tot)}</b></span></div>
-<button class="btn" onclick="S.open=S.open=='${L.id}'?null:'${L.id}';draw()">Tableau d’amortissement</button>${S.open==L.id?amort(L):''}<button class="btn red" onclick="dc('${L.id}')">${armed==L.id?'Confirmer la suppression':'Supprimer'}</button></div>`}).join('')+`<div class="card"><h3>Ajouter un crédit</h3><input id="l1" class="nm w" placeholder="Nom (ex. Prêt immo)"><input id="l2" class="nm w" inputmode="decimal" placeholder="Capital emprunté (€)"><input id="l3" class="nm w" inputmode="decimal" placeholder="Taux annuel (%)"><input id="l4" class="nm w" inputmode="numeric" placeholder="Durée (mois)"><input id="l5" class="nm w" type="month" value="${cur}"><input id="l6" class="nm w" inputmode="decimal" placeholder="Assurance / mois (€)"><button class="btn" onclick="ac()">Ajouter</button></div>`}
-function ac(){const g=i=>$('#l'+i).value,n=g(1).trim(),cap=num(g(2)),d=Math.round(num(g(4)));if(!n||cap<=0||d<=0)return;(S.loans=S.loans||[]).push({id:uid(),n,cap,rate:num(g(3)),dur:d,start:g(5)||cur,ass:num(g(6))});save()}
-function dc(id){if(armed!=id){armed=id;draw();return}S.loans=S.loans.filter(x=>x.id!=id);armed=null;save()}
-const LIQ=(a,l)=>/livret|ldds|lep/i.test(a.n)||/esp[eè]ces|liquid|cash|solde/i.test(l.n);
-const liq=m=>S.accs.reduce((s,a)=>s+a.l.filter(l=>LIQ(a,l)).reduce((q,l)=>q+lv(m,l.id),0),0);
 
 function tips(){const t=tot(cur),b=bm(cur),sp=cs(cur),rev=b.r,r=[],T=(l,h,x)=>r.push([l,h,x]),f=n=>n.toFixed(1).replace('.',','),X='À examiner';
 if(t<=0)return r;
@@ -212,43 +243,54 @@ return r}
 
 function tipsCard(){const r=tips();if(!r.length)return'';return`<div class="card"><h3>Conseils <span class="mut s">${r.length}</span></h3>${r.map(x=>`<div style="border-top:1px solid var(--bd);padding:10px 0"><span class="pill ${x[0]=='À examiner'?'on':''}">${x[0]}</span> <b>${x[1]}</b><p class="s mut" style="margin:6px 0 0">${x[2]}</p></div>`).join('')}</div>`}
 
-function quick(){return`<button class="back" onclick="go('accs')">← Comptes</button><div class="card"><h3>Mise à jour rapide · ${mlabel(cur)}</h3><p class="s mut" style="margin:0">Mets à jour tous tes soldes d’un coup. Total : <b>${eur(tot(cur))}</b></p></div>`+S.accs.map((a,i)=>`<div class="card"><div class="ft"><b><i class="dot" style="background:${COL[i%6]}"></i>${esc(a.n)}</b><b>${eur(at(cur,a))}</b></div>${a.l.map(l=>`<div class="ln" style="margin-top:8px"><span style="flex:1;align-self:center" class="s">${esc(l.n)}</span><input class="vl" inputmode="decimal" value="${lv(cur,l.id)||''}" placeholder="0" oninput="sv('${l.id}',this.value,1)" onchange="sv('${l.id}',this.value)"></div>`).join('')}<div class="ln" style="margin-top:8px"><span style="flex:1;align-self:center" class="s mut">Versement du mois</span><input class="vl" inputmode="decimal" value="${dep(cur,a)||''}" placeholder="0" oninput="sd('${a.id}',this.value,1)" onchange="sd('${a.id}',this.value)"></div><button class="btn" style="margin-top:8px" onclick="al('${a.id}')">+ Ajouter un titre ou une ligne</button></div>`).join('')}
+function feeCard(){const t=tot(cur),F=fees(cur);if(F<=0)return'<div class="card"><h3>Scanner de frais</h3><p class="s mut" style="margin:0">Renseigne les frais annuels (%) de tes lignes dans chaque compte (ETF, contrat, courtier) pour estimer leur coût sur 30 ans.</p></div>';
+const md=med(keys().slice(-6).map(k=>S.accs.reduce((s,a)=>s+Math.max(0,dep(k,a)),0))),r=SM().etf,fm=F/t*100,lost=fv(t,md,r,30)-fv(t,md,r-fm,30),red=fv(t,md,r-Math.min(fm,.2),30)-fv(t,md,r-fm,30),L=[];
+S.accs.forEach(a=>a.l.forEach(l=>{const c=lv(cur,l.id)*(l.f||0)/100;if(c>0)L.push([a.n+' · '+l.n,c,l.f])}));
+return`<div class="card"><h3>Scanner de frais</h3><div style="font-size:30px;font-weight:700">${eur(F)} <span class="s mut">/ an</span></div><p class="s mut">${fm.toFixed(2).replace('.',',')} % de ton patrimoine. Sur 30 ans, avec ${String(r).replace('.',',')} % de rendement brut, ces frais te coûteraient environ <b>${eur(lost)}</b>.</p>${fm>.3?`<p class="s">Avec des frais ramenés à 0,2 % (ETF à bas coûts), tu gagnerais environ <b class="up">${eur(red)}</b>.</p>`:''}${L.sort((x,y)=>y[1]-x[1]).slice(0,4).map(x=>`<div class="row" style="cursor:default"><span>${esc(x[0])}</span><span>${eur(x[1])} · ${String(x[2]).replace('.',',')} %</span></div>`).join('')}</div>`}
+const fees=m=>S.accs.reduce((s,a)=>s+a.l.reduce((q,l)=>q+lv(m,l.id)*(l.f||0)/100,0),0);
 
-const SM=()=>Object.assign({A:10000,M:200,Y:10,etf:6.6,fee:.25,liv:1.7,fe:2.5},S.sim||{});
-function ss(k,v){S.sim=SM();S.sim[k]=num(v);save()}
-function fv(A,M,r,y){const n=Math.round(y*12),i=Math.pow(1+r/100,1/12)-1;return A*Math.pow(1+i,n)+(i?M*(Math.pow(1+i,n)-1)/i:M*n)}
-function cmp(){const s=SM(),inv=s.A+s.M*Math.round(s.Y*12);
-const row=(n,r,tax)=>{const v=fv(s.A,s.M,r,s.Y),g=Math.max(0,v-inv),t=tax(g);return[n,v,g-t,v-t,t]};
-return[row('Livret A',s.liv,g=>0),row('Assurance-vie (fonds euros)',s.fe,g=>g*.172+(s.Y>=8?Math.max(0,g-4600)*.075:g*.128)),row('PEA (ETF actions)',s.etf-s.fee,g=>g*(s.Y>=5?.186:.314)),row('CTO (ETF actions)',s.etf-s.fee,g=>g*.314)]}
-const qt=(a,p)=>{a=a.slice().sort((x,y)=>x-y);const i=(a.length-1)*p,l=Math.floor(i);return a[l]+(a[Math.min(l+1,a.length-1)]-a[l])*(i-l)};
+function divCard(){const D=S.dv||{},ks=[];for(let i=11;i>=0;i--)ks.push(addM(cur,-i));const vs=ks.map(k=>D[k]||0),s=vs.reduce((a,b)=>a+b,0),t=tot(cur),mx=Math.max(1,...vs);
+return`<div class="card"><h3>Dividendes et intérêts</h3><div class="ln"><span style="flex:1;align-self:center" class="s">Reçus en ${mlabel(cur)}</span><input class="vl" inputmode="decimal" value="${D[cur]||''}" placeholder="0" onchange="sdv(this.value)"></div><svg viewBox="0 0 300 70" width="100%">${vs.map((v,i)=>`<rect x="${i*25+3}" y="${65-v/mx*60}" width="19" height="${v/mx*60}" rx="3" fill="var(--ac)"/>`).join('')}</svg><div class="ft s"><span>12 mois : <b>${eur(s)}</b></span><span>Moyenne : <b>${eur(s/12)}/mois</b></span><span>Rendement : <b>${t>0?(s/t*100).toFixed(2).replace('.',',')+' %':'—'}</b></span></div></div>`}
 
-function treso(){const ks=Object.keys(S.bud||{}).sort().slice(-6);if(!ks.length)return'<p class="mut s">Renseigne ton budget (revenus et dépenses) pour obtenir une prévision.</p>';
-const nets=ks.map(k=>bm(k).r-cs(k)-epg(k)),L=liq(cur),lo=qt(nets,.25),md=qt(nets,.5),hi=qt(nets,.75);
-return`<p class="s mut">Liquidités actuelles : <b>${eur(L)}</b> · net mensuel médian : <b>${eur(md)}</b> (sur ${ks.length} mois)</p>`+[1,3,6,12].map(k=>`<div class="row" style="cursor:default"><span>Dans ${k} mois</span><span><b>${eur(L+md*k)}</b><br><span class="s mut">entre ${eur(L+lo*k)} et ${eur(L+hi*k)}</span></span></div>`).join('')}
+const KP=(l,v,s)=>`<div class="card" style="margin:0"><div class="mut s">${l}</div><div style="font-size:24px;font-weight:700;margin:6px 0">${v}</div><div class="s mut">${s}</div></div>`;
+function kpis(){const t=tot(cur),inv=t-liq(cur),p=prv(cur);return`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">${KP('Capital au travail',eur(inv),'hors liquidités')}${KP('Rendement annualisé',rd(),'depuis le début')}${KP('Gain du mois',p?gtxt(gainT(cur),tot(p)):'—','hors versements')}${KP('Part investie',t>0?(inv/t*100).toFixed(0)+' %':'—','du patrimoine brut')}</div>`}
 
-function irr(){const ks=keys();if(ks.length<2)return null;const f=ks[0],l=ks[ks.length-1],C=[[0,-tot(f)]];ks.slice(1).forEach(k=>C.push([mm(f,k),-S.accs.reduce((s,a)=>s+dep(k,a),0)]));C.push([mm(f,l),tot(l)]);
-const N=r=>C.reduce((s,c)=>s+c[1]/Math.pow(1+r,c[0]),0);let a=-.5,b=.5;if(N(a)*N(b)>0)return null;for(let i=0;i<80;i++){const m=(a+b)/2;N(a)*N(m)<=0?b=m:a=m}return Math.pow(1+(a+b)/2,12)-1}
+const TY=[['pea','PEA'],['cto','Compte-titres'],['liv','Livret A'],['ldd','LDDS'],['lep','LEP'],['av','Assurance-vie'],['per','PER'],['cry','Crypto'],['imm','Immobilier (bien)'],['scpi','SCPI / parts de SCI'],['soc','Parts de société'],['cc','Compte courant'],['aut','Autre']];
+function mkAcc(t,n,b){const L=['pea','cto','av','per','cry'].includes(t)?['Titres','Espèces']:[['imm','scpi','soc'].includes(t)?'Valeur':'Solde'],a={id:uid(),n,ty:t,l:L.map(x=>({id:uid(),n:x}))};S.accs.push(a);ensure(cur);delete S.m[cur].c;S.m[cur].v[a.l[0].id]=num(b);snap();save();return a}
+function addCard(){return`<div class="card"><h3>Ajouter un compte</h3><select id="at" class="w" style="${SEL}" onchange="$('#an').value=this.options[this.selectedIndex].text">${TY.map(t=>`<option value="${t[0]}">${t[1]}</option>`).join('')}</select><input id="an" class="nm w" value="PEA" placeholder="Nom du compte"><input id="ab" class="nm w" inputmode="decimal" placeholder="Solde actuel (€)"><button class="btn" onclick="const n=$('#an').value.trim();if(n){mkAcc($('#at').value,n,$('#ab').value);draw()}">+ Ajouter ce compte</button></div>`}
 
-function rd(){const x=irr(),ks=keys();if(!ks.length||x==null||mm(ks[0],ks[ks.length-1])<6)return'<span class="mut s">dès 6 mois d’historique</span>';return`<span class="${x>=0?'up':'dn'}">${pct(x*100)}</span>`}
+function sdv(v){S.dv=S.dv||{};S.dv[cur]=num(v);save()}
 
-function sim(){const s=SM(),r=cmp().sort((a,b)=>b[3]-a[3]),mx=r[0][3]||1;
-const f=(k,l)=>`<label class="s mut" style="flex:1;min-width:45%">${l}<input class="w" style="margin:2px 0 0" inputmode="decimal" value="${s[k]}" onchange="ss('${k}',this.value)"></label>`;
-return`<button class="btn" style="margin:0 0 12px" onclick="go('tax')">🧾 Calculer mon impôt sur le revenu</button><div class="card"><h3>Comparateur de placements</h3><div style="display:flex;gap:6px;margin-bottom:8px">${[[4,'Prudent 4 %'],[7,'Équilibré 7 %'],[10,'Dynamique 10 %']].map(r=>`<button class="pill ${s.etf==r[0]?'on':''}" onclick="ss('etf',${r[0]})">${r[1]}</button>`).join('')}</div><div style="display:flex;flex-wrap:wrap;gap:8px">${f('A','Montant à placer (€)')}${f('M','Versement mensuel (€)')}${f('Y','Horizon (années)')}${f('etf','Rendement brut ETF (%/an)')}${f('fee','Frais ETF (%/an)')}${f('liv','Livret A (%/an)')}${f('fe','Fonds euros (%/an)')}</div>
-${r.map((x,i)=>`<div style="margin-top:12px"><div class="ft"><b>${x[0]}</b><b class="${i==0?'up':''}">${eur(x[3])}</b></div><div style="height:8px;border-radius:5px;background:var(--bd);overflow:hidden;margin:4px 0"><div style="width:${x[3]/mx*100}%;height:100%;background:${COL[i]}"></div></div><div class="s mut">gain net ${eur(x[2])} · impôts ${eur(x[4])}</div></div>`).join('')}
-<p class="s mut">Montants nets d’impôts à la fin de l’horizon. Hypothèses 2026 : prélèvements sociaux de 18,6 % (PEA, CTO) et 17,2 % (assurance-vie) ; PEA après 5 ans sans impôt sur le revenu ; assurance-vie après 8 ans avec abattement de 4 600 € et IR à 7,5 %, sinon flat tax ; CTO à 31,4 %. Rendements constants et non garantis : ajuste les taux selon les offres du moment. Simulation indicative, pas un conseil en investissement.</p></div>
-<div class="card"><h3>Prévision de trésorerie</h3>${treso()}<p class="s mut">Projection simple : liquidités + net mensuel médian (revenus − dépenses − épargne). La fourchette reprend les quartiles 25 % / 75 % des mois observés.</p></div>`}
+function set(){return`<div class="card"><h3>Clé API DeepSeek</h3><input type="password" value="${esc(S.apiKey)}" placeholder="sk-..." onchange="S.apiKey=this.value;save()"></div><div class="card"><h3>Sauvegarde</h3><button class="btn primary" onclick="exportData()">Exporter</button><label class="btn" style="display:block;text-align:center;cursor:pointer">Restaurer<input type="file" accept=".json" hidden onchange="importData(this)"></label></div>`}
+function exportData(){let d="data:text/json;charset=utf-8,"+encodeURIComponent(JSON.stringify(S));let a=document.createElement('a');a.href=d;a.download='sauvegarde.json';a.click()}
+function importData(i){let f=i.files[0];if(!f)return;let r=new FileReader();r.onload=e=>{try{let d=JSON.parse(e.target.result);if(d.accs){S=d;save();alert('Restauré !')}}catch(x){alert('Erreur')}};r.readAsText(f)}
 
-let TR=[[11600,0],[29579,.11],[84577,.3],[181917,.41],[1e12,.45]];
-const TAXY={2025:{T:[11600,29579,84577,181917],qf:1807,d:[897,1483],ab:[509,14555],lab:'Revenus 2025 · impôt payé en 2026 (barème en vigueur)'},2026:{T:[11844,30200,86353,185737],qf:1845,d:[915,1513],ab:[520,14861],lab:'Revenus 2026 · impôt payé en 2027 (projet de loi de finances, pas encore voté)'}};
-const TX=()=>Object.assign({m:0,p:0,b:0,c:22,sit:1,k:0,fr:0,ni:0,y:2026},S.tax||{});
-function st(k,v){S.tax=TX();S.tax[k]=num(v);save()}
-function ir1(q){let t=0,lo=0;const R=[];for(const[h,r]of TR){const b=Math.max(0,Math.min(q,h)-lo);t+=b*r;R.push([lo,h,r,b,b*r]);lo=h}return{t,R}}
-function taxc(){const x=TX(),Y=TAXY[x.y]||TAXY[2026];TR=[[Y.T[0],0],[Y.T[1],.11],[Y.T[2],.3],[Y.T[3],.41],[1e12,.45]];const brut=x.b>0?x.b:x.m*12+x.p,net=brut*(1-x.c/100),ni=x.ni>0?x.ni:net+brut*.0285,a10=Math.min(Y.ab[1],Math.max(Y.ab[0],ni*.1)),fr=x.fr>a10,ab=fr?x.fr:a10,rev=Math.max(0,Math.floor(ni-ab));
-const cpl=x.sit==2,ref=cpl?2:1,k=Math.round(x.k),P=ref+(k>=1?.5:0)+(k>=2?.5:0)+Math.max(0,k-2)+(!cpl&&k>0?.5:0);
-const a=ir1(rev/P),full=a.t*P,r0=ir1(rev/ref).t*ref,cap=(P-ref)*2*Y.qf;let imp=full,plaf=false;if(r0-full>cap){imp=r0-cap;plaf=true}
-const d0=Y.d[cpl?1:0],sc=d0/.4525;let dec=0;if(imp<sc)dec=Math.min(imp,Math.max(0,d0-.4525*imp));const due=Math.round(imp-dec);
-return{Y,brut,net,ni,ab,fr,rev,P,R:a.R,q:rev/P,imp,plaf,dec,due,tmi:(a.R.filter(q=>q[3]>0).pop()||[0,0,0])[2],moy:rev>0?due/rev:0,apres:(x.ni>0?ni:net)-due}}
-const SEL='font:inherit;color:var(--tx);background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:8px';
+// ==========================================
+// 4. VUES ET ACTIONS
+// ==========================================
+function home(){const t=tot(cur),p=prv(cur);
+return(tot(cur)==0&&!keys().length?'<div class="card"><h3>Bienvenue 👋</h3><p class="s">1. Ouvre <b>Comptes</b> et saisis le solde de chaque ligne (titres, espèces…).<br>2. Chaque mois, mets les soldes à jour et note tes versements.<br>3. Renseigne <b>Budget</b> et <b>Crédits</b> pour un tableau de bord complet.</p></div>':'')+`<div class="card"><div class="mut">Patrimoine net (brut − dettes)</div><div class="big">${eur(t-debt())}</div><div class="s mut">Brut ${eur(t)} · Dettes ${eur(debt())}</div><div>${p?gtxt(gainT(cur),tot(p))+' <span class="mut s">vs '+mlabel(p)+', hors versements</span>':'<span class="mut s">Premier mois saisi</span>'}</div></div>
+${kpis()}<div class="card"><h3>Évolution</h3><div style="display:flex;gap:6px;margin-bottom:8px">${[[0.25,'1S'],[1,'1M'],[3,'3M'],[6,'6M'],[12,'1A'],[0,'Tout']].map(r=>`<button class="pill ${(S.rng||0)==r[0]?'on':''}" onclick="S.rng=${r[0]};save()">${r[1]}</button>`).join('')}</div>${chart()}</div>
+<div class="card"><h3>Répartition</h3>${donut()}</div>${tipsCard()}${goal()}<div style="display:flex;gap:8px;margin-bottom:12px"><button class="btn" style="margin:0;padding:12px 4px;font-size:14px;min-width:0" onclick="go('hist')">📊 Historique</button><button class="btn" style="margin:0;padding:12px 4px;font-size:14px;min-width:0" onclick="go('sim')">🧮 Simulateurs</button><button class="btn" style="margin:0;padding:12px 4px;font-size:14px;min-width:0" onclick="go('tax')">🧾 Impôts</button></div><div hidden class="card"><h3>Répartition</h3>${donut()||'<p class="mut s">Saisis tes soldes dans l’onglet Comptes pour voir la répartition.</p>'}</div>`}
+function acc(a){const p=prv(cur);return`<button class="btn" style="margin:0 0 14px" onclick="go('accs')">← Comptes</button><div class="card"><div class="mut">${esc(a.n)}</div><div class="big">${eur(at(cur,a))}</div><div>${p?gtxt(gain(cur,a),at(p,a)):''}</div></div><div class="card"><h3>Lignes</h3>${a.l.map(l=>`<div class="ln"><input class="nm" value="${esc(l.n)}" onchange="rn('${a.id}','${l.id}',this.value)"><input class="vl" inputmode="decimal" value="${lv(cur,l.id)||''}" placeholder="0" oninput="sv('${l.id}',this.value,1)" onchange="sv('${l.id}',this.value)"><button class="x" onclick="dl('${a.id}','${l.id}')">×</button></div>`).join('')}<button class="btn" onclick="al('${a.id}')">+ Ligne</button></div><div class="card"><h3>Versement</h3><input class="vl w" inputmode="decimal" value="${dep(cur,a)||''}" placeholder="0" oninput="sd('${a.id}',this.value,1)" onchange="sd('${a.id}',this.value)"></div><button class="btn red" onclick="da('${a.id}')">Supprimer</button>`}
+function accs(){return`<div class="card"><h3>Mes Comptes</h3>${list()}</div>`+addCard()}
+function bud(){const b=bm(cur),rev=b.r,sp=cs(cur),ep=epg(cur),rest=rev-sp-ep;
+return`<div class="card"><h3>Ma réalité · ${mlabel(cur)}</h3><div class="ln"><span style="align-self:center;flex:1">Revenus du travail</span><input class="vl" inputmode="decimal" value="${rev||''}" placeholder="0" onchange="srev(this.value)"></div>
+<div class="ft" style="gap:8px"><div><div class="mut s">Dépenses</div><b class="dn">${eur(sp)}</b></div><div><div class="mut s">Épargne</div><b class="up">${eur(ep)}</b></div><div><div class="mut s">Reste</div><b class="${rest>=0?'up':'dn'}">${eur(rest)}</b></div><div><div class="mut s">Taux d’épargne</div><b>${rev>0?(ep/rev*100).toFixed(0)+' %':'—'}</b></div></div></div>
+<div class="card"><h3>Cashflow <span class="mut s">· revenus ${eur(rev)}</span></h3>${sankey()}</div>
+<div class="card"><h3>Règle 50/30/20</h3>${rule()||'<p class="mut s">Saisis tes revenus.</p>'}<p class="mut s">L’épargne correspond aux versements saisis dans l’onglet Comptes.</p></div>
+<div class="card"><h3>Dépenses par catégorie</h3>${CAT.map((c,i)=>`<div class="ln"><span style="flex:1;align-self:center"><i class="dot" style="background:${COL[i%6]}"></i>${c[1]} <span class="mut s">${c[2]=='B'?'besoin':'envie'}</span></span><input class="vl" inputmode="decimal" value="${b.c[c[0]]||''}" placeholder="0" onchange="sbud('${c[0]}',this.value)"></div>`).join('')}</div>
+<div class="card"><h3>Entrées et sorties par mois</h3>${mbars()||'<p class="mut s">Disponible dès deux mois de budget saisis.</p>'}</div>`}
+function sbud(k,v){W().c[k]=num(v);save()}
+function srev(v){W().r=num(v);save()}
+
+function cred(){const Ls=S.loans||[];
+return`<div class="card"><div class="mut">Dettes restantes</div><div class="big dn">${eur(debt())}</div><div class="s mut">${Ls.length} crédit${Ls.length>1?'s':''}</div></div>`+Ls.map(L=>{const c=lc(L),p=(1-c.rest/L.cap)*100;
+return`<div class="card"><div class="ft"><b>${esc(L.n)}</b><b>${eur(c.rest)}</b></div><div class="mut s">taux ${String(L.rate).replace('.',',')} % · fin ${mlabel(addM(L.start,L.dur-1))}</div><div style="height:10px;border-radius:6px;background:var(--bd);overflow:hidden;margin:8px 0"><div style="width:${p}%;height:100%;background:var(--ac)"></div></div><p class="s">${p.toFixed(1).replace('.',',')} % remboursé sur ${eur(L.cap)} · ${L.dur-c.k} mensualités restantes</p>
+<div class="ft s"><span>Mensualité<br><b>${eur(c.mens,2)}</b></span><span>Assurance / mois<br><b>${eur(L.ass||0,2)}</b></span></div><div class="ft s" style="margin-top:8px"><span>Intérêts payés<br><b>${eur(c.ip)}</b></span><span>Intérêts restants<br><b>${eur(c.ir)}</b></span><span>Coût total<br><b>${eur(c.tot)}</b></span></div>
+<button class="btn" onclick="S.open=S.open=='${L.id}'?null:'${L.id}';save()">Tableau d’amortissement</button>${S.open==L.id?amort(L):''}<button class="btn red" onclick="dc('${L.id}')">${armed==L.id?'Confirmer la suppression':'Supprimer'}</button></div>`}).join('')+`<div class="card"><h3>Ajouter un crédit</h3><input id="l1" class="nm w" placeholder="Nom (ex. Prêt immo)"><input id="l2" class="nm w" inputmode="decimal" placeholder="Capital emprunté (€)"><input id="l3" class="nm w" inputmode="decimal" placeholder="Taux annuel (%)"><input id="l4" class="nm w" inputmode="numeric" placeholder="Durée (mois)"><input id="l5" class="nm w" type="month" value="${cur}"><input id="l6" class="nm w" inputmode="decimal" placeholder="Assurance / mois (€)"><button class="btn" onclick="ac()">Ajouter</button></div>`}
+function ac(){const g=i=>$('#l'+i).value,n=g(1).trim(),cap=num(g(2)),d=Math.round(num(g(4)));if(!n||cap<=0||d<=0)return;(S.loans=S.loans||[]).push({id:uid(),n,cap,rate:num(g(3)),dur:d,start:g(5)||cur,ass:num(g(6))});save()}
+function dc(id){if(armed!=id){armed=id;draw();return}S.loans=S.loans.filter(x=>x.id!=id);armed=null;save()}
 
 function impots(){const x=TX(),c=taxc(),R=(l,v)=>`<div class="row" style="cursor:default"><span>${l}</span><b>${v}</b></div>`;
 const f=(k,l)=>`<label class="s mut" style="flex:1;min-width:45%">${l}<input class="w" style="margin:2px 0 0" inputmode="decimal" value="${x[k]||''}" placeholder="0" onchange="st('${k}',this.value)"></label>`;
@@ -256,46 +298,50 @@ return`<button class="back" onclick="go('ana')">← Analyse</button><div class="
 <div class="card"><h3>Détail par tranche (pour 1 part)</h3><table class="s" style="width:100%;border-collapse:collapse;text-align:right"><tr class="mut"><th style="text-align:left">Tranche</th><th>Taux</th><th>Base</th><th>Impôt</th></tr>${c.R.map(r=>`<tr><td style="text-align:left">${r[1]>=1e12?'au-delà de '+eur(r[0]):'jusqu’à '+eur(r[1])}</td><td>${r[2]*100} %</td><td>${eur(r[3])}</td><td>${eur(r[4])}</td></tr>`).join('')}</table>${c.plaf?`<p class="s mut">Avantage du quotient familial plafonné (${c.Y.qf} € par demi-part).</p>`:''}${c.dec>0?'<p class="s mut">Décote appliquée : − '+eur(c.dec)+'</p>':''}</div>
 <div class="card"><div class="mut">Impôt à payer</div><div class="big">${eur(c.due)}</div>${R('Soit par mois (prélèvement à la source)',eur(c.due/12))}${R('Taux moyen',(c.moy*100).toFixed(1).replace('.',',')+' %')}${R('Tranche marginale (TMI)',(c.tmi*100)+' %')}${R('Net après impôt par mois',eur(c.apres/12))}<button class="btn" onclick="srev(${Math.round(c.apres/12)});go('bud')">Utiliser comme revenus du Budget</button></div>`:'<div class="card"><p class="mut s" style="margin:0">Saisis ton salaire brut mensuel et tes primes pour calculer ton impôt.</p></div>')+`<p class="s mut">Sources : barème de la loi de finances 2026 (service-public.gouv.fr), abattement de 10 % entre 509 et 14 555 € (impots.gouv.fr), décote et plafonnement du quotient familial 2026. Les cotisations salariés sont estimées par le taux saisi (environ 22 % pour un non-cadre, 25 % pour un cadre) : pour un résultat exact, saisis le net imposable de ta fiche de paie. Crédits et réductions d’impôt, parent isolé et situations particulières sont simplifiés : vérifie avec le simulateur officiel impots.gouv.fr.</p>`}
 
-const IC={home:'<rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/>',accs:'<rect x="4" y="10" width="4" height="10" rx="2"/><rect x="10" y="4" width="4" height="16" rx="2"/><rect x="16" y="13" width="4" height="7" rx="2"/>',bud:'<rect x="3" y="3" width="18" height="18" rx="5"/><path d="M8 9h8M8 15h5" stroke="var(--card)" stroke-width="2" stroke-linecap="round"/>',ana:'<circle cx="12" cy="12" r="9"/><path d="M9 15l2-6 4-1-2 6z" fill="var(--card)"/>',sim:'<ellipse cx="12" cy="7" rx="8" ry="3.5"/><path d="M4 11c0 2 3.6 3.5 8 3.5s8-1.5 8-3.5v3.5c0 2-3.6 3.5-8 3.5s-8-1.5-8-3.5z"/>'};
-
 function ana(){const t=tot(cur),n=S.accs.length,sc=t>0&&n>1?10*(1-S.accs.reduce((s,a)=>s+Math.pow(at(cur,a)/t,2),0))/(1-1/n):0,
 lv2=S.accs.filter(a=>/livret|ldds|lep/i.test(a.n)).reduce((s,a)=>s+at(cur,a),0),L=liq(cur),sp=cs(cur),rev=bm(cur).r,mens=(S.loans||[]).reduce((s,x)=>s+lc(x).mens+(x.ass||0),0),f=n=>n.toFixed(1).replace('.',',');
 const K=(l,v,s)=>`<div class="card" style="margin:0"><div class="mut s">${l}</div><div style="font-size:26px;font-weight:700;margin:6px 0">${v}</div><div class="s mut">${s}</div></div>`;
 return`<h2 style="margin:4px 0 12px;font-size:28px">Analyse</h2>`+tipsCard()+`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">${K('Diversification',f(sc)+'/10','répartition entre tes comptes')}${K('Intérêts des livrets',eur(lv2*SM().liv/100),'par an, à '+SM().liv+' %')}${K('Épargne de précaution',sp>0?f(L/sp)+' mois':'—','cible : 6 mois de dépenses')}${K('Taux d’endettement',rev>0?(mens/rev*100).toFixed(0)+' %':'—','seuil usuel : 35 %')}${K('Taux d’épargne',rev>0?(epg(cur)/rev*100).toFixed(0)+' %':'—','cible : 20 %')}${K('Dettes / patrimoine',t>0?(debt()/t*100).toFixed(0)+' %':'—','part du brut')}</div>`+feeCard()+divCard()+goals()+goal()+`<div style="display:flex;gap:8px;margin-bottom:8px"><button class="btn" style="margin:0" onclick="go('sim')">🧮 Simulateurs</button><button class="btn" style="margin:0" onclick="go('tax')">🧾 Impôts</button></div><button class="btn" style="margin:0 0 8px" onclick="go('rep')">📄 Exporter un rapport PDF</button>`}
 
-const GL=()=>S.goals||(S.goals=[]);
+function goals(){return`<div class="card"><h3>Objectifs suivis</h3>${GL().map(g=>{const p=Math.min(100,g.s/g.t*100),m=Math.max(1,mm(cur,g.d)),need=Math.max(0,(g.t-g.s)/m);return`<div style="padding:10px 0;border-top:1px solid var(--bd)"><div class="ft"><b>${esc(g.n)}</b><span class="s mut">${mlabel(g.d)}</span></div><div style="height:8px;border-radius:5px;background:var(--bd);overflow:hidden;margin:6px 0"><div style="width:${p}%;height:100%;background:var(--ac)"></div></div><div class="ft s"><span>${eur(g.s)} / ${eur(g.t)}</span><span class="${need>0?'':'up'}">${need>0?eur(need)+' / mois':'Atteint 🎉'}</span></div><div class="ln" style="margin-top:6px"><input class="nm" inputmode="decimal" value="${g.s||''}" placeholder="Déjà mis de côté (€)" onchange="ug('${g.id}',this.value)"><button class="x" onclick="dg('${g.id}')">×</button></div></div>`}).join('')}<input id="gn" class="nm w" placeholder="Nom (ex. Voyage au Japon)"><div style="display:flex;gap:8px"><input id="gt" class="nm w" inputmode="decimal" placeholder="Cible (€)"><input id="gs" class="nm w" inputmode="decimal" placeholder="Déjà (€)"></div><input id="gd" class="nm w" type="month" value="${addM(cur,12)}"><button class="btn" onclick="ag()">+ Ajouter un objectif</button></div>`}
 function ag(){const n=$('#gn').value.trim(),t=num($('#gt').value);if(!n||t<=0)return;GL().push({id:uid(),n,t,s:num($('#gs').value),d:$('#gd').value||addM(cur,12)});save()}
 function ug(id,v){GL().find(g=>g.id==id).s=num(v);save()}
 function dg(id){S.goals=GL().filter(g=>g.id!=id);save()}
-function goals(){return`<div class="card"><h3>Objectifs suivis</h3>${GL().map(g=>{const p=Math.min(100,g.s/g.t*100),m=Math.max(1,mm(cur,g.d)),need=Math.max(0,(g.t-g.s)/m);return`<div style="padding:10px 0;border-top:1px solid var(--bd)"><div class="ft"><b>${esc(g.n)}</b><span class="s mut">${mlabel(g.d)}</span></div><div style="height:8px;border-radius:5px;background:var(--bd);overflow:hidden;margin:6px 0"><div style="width:${p}%;height:100%;background:var(--ac)"></div></div><div class="ft s"><span>${eur(g.s)} / ${eur(g.t)}</span><span class="${need>0?'':'up'}">${need>0?eur(need)+' / mois':'Atteint 🎉'}</span></div><div class="ln" style="margin-top:6px"><input class="nm" inputmode="decimal" value="${g.s||''}" placeholder="Déjà mis de côté (€)" onchange="ug('${g.id}',this.value)"><button class="x" onclick="dg('${g.id}')">×</button></div></div>`}).join('')}<input id="gn" class="nm w" placeholder="Nom (ex. Voyage au Japon)"><div style="display:flex;gap:8px"><input id="gt" class="nm w" inputmode="decimal" placeholder="Cible (€)"><input id="gs" class="nm w" inputmode="decimal" placeholder="Déjà (€)"></div><input id="gd" class="nm w" type="month" value="${addM(cur,12)}"><button class="btn" onclick="ag()">+ Ajouter un objectif</button></div>`}
 
-function sf(a,l,v){A(a).l.find(x=>x.id==l).f=num(v);save()}
-const fees=m=>S.accs.reduce((s,a)=>s+a.l.reduce((q,l)=>q+lv(m,l.id)*(l.f||0)/100,0),0);
-function feeCard(){const t=tot(cur),F=fees(cur);if(F<=0)return'<div class="card"><h3>Scanner de frais</h3><p class="s mut" style="margin:0">Renseigne les frais annuels (%) de tes lignes dans chaque compte (ETF, contrat, courtier) pour estimer leur coût sur 30 ans.</p></div>';
-const md=med(keys().slice(-6).map(k=>S.accs.reduce((s,a)=>s+Math.max(0,dep(k,a)),0))),r=SM().etf,fm=F/t*100,lost=fv(t,md,r,30)-fv(t,md,r-fm,30),red=fv(t,md,r-Math.min(fm,.2),30)-fv(t,md,r-fm,30),L=[];
-S.accs.forEach(a=>a.l.forEach(l=>{const c=lv(cur,l.id)*(l.f||0)/100;if(c>0)L.push([a.n+' · '+l.n,c,l.f])}));
-return`<div class="card"><h3>Scanner de frais</h3><div style="font-size:30px;font-weight:700">${eur(F)} <span class="s mut">/ an</span></div><p class="s mut">${fm.toFixed(2).replace('.',',')} % de ton patrimoine. Sur 30 ans, avec ${String(r).replace('.',',')} % de rendement brut, ces frais te coûteraient environ <b>${eur(lost)}</b>.</p>${fm>.3?`<p class="s">Avec des frais ramenés à 0,2 % (ETF à bas coûts), tu gagnerais environ <b class="up">${eur(red)}</b>.</p>`:''}${L.sort((x,y)=>y[1]-x[1]).slice(0,4).map(x=>`<div class="row" style="cursor:default"><span>${esc(x[0])}</span><span>${eur(x[1])} · ${String(x[2]).replace('.',',')} %</span></div>`).join('')}</div>`}
-function sdv(v){S.dv=S.dv||{};S.dv[cur]=num(v);save()}
-function divCard(){const D=S.dv||{},ks=[];for(let i=11;i>=0;i--)ks.push(addM(cur,-i));const vs=ks.map(k=>D[k]||0),s=vs.reduce((a,b)=>a+b,0),t=tot(cur),mx=Math.max(1,...vs);
-return`<div class="card"><h3>Dividendes et intérêts</h3><div class="ln"><span style="flex:1;align-self:center" class="s">Reçus en ${mlabel(cur)}</span><input class="vl" inputmode="decimal" value="${D[cur]||''}" placeholder="0" onchange="sdv(this.value)"></div><svg viewBox="0 0 300 70" width="100%">${vs.map((v,i)=>`<rect x="${i*25+3}" y="${65-v/mx*60}" width="19" height="${v/mx*60}" rx="3" fill="var(--ac)"/>`).join('')}</svg><div class="ft s"><span>12 mois : <b>${eur(s)}</b></span><span>Moyenne : <b>${eur(s/12)}/mois</b></span><span>Rendement : <b>${t>0?(s/t*100).toFixed(2).replace('.',',')+' %':'—'}</b></span></div></div>`}
-const KP=(l,v,s)=>`<div class="card" style="margin:0"><div class="mut s">${l}</div><div style="font-size:24px;font-weight:700;margin:6px 0">${v}</div><div class="s mut">${s}</div></div>`;
-function kpis(){const t=tot(cur),inv=t-liq(cur),p=prv(cur);return`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">${KP('Capital au travail',eur(inv),'hors liquidités')}${KP('Rendement annualisé',rd(),'depuis le début')}${KP('Gain du mois',p?gtxt(gainT(cur),tot(p)):'—','hors versements')}${KP('Part investie',t>0?(inv/t*100).toFixed(0)+' %':'—','du patrimoine brut')}</div>`}
-function pr(){try{print()}catch(e){}}
+function sim(){const s=SM(),r=cmp().sort((a,b)=>b[3]-a[3]),mx=r[0][3]||1;
+const f=(k,l)=>`<label class="s mut" style="flex:1;min-width:45%">${l}<input class="w" style="margin:2px 0 0" inputmode="decimal" value="${s[k]}" onchange="ss('${k}',this.value)"></label>`;
+return`<button class="btn" style="margin:0 0 12px" onclick="go('tax')">🧾 Calculer mon impôt sur le revenu</button><div class="card"><h3>Comparateur de placements</h3><div style="display:flex;gap:6px;margin-bottom:8px">${[[4,'Prudent 4 %'],[7,'Équilibré 7 %'],[10,'Dynamique 10 %']].map(r=>`<button class="pill ${s.etf==r[0]?'on':''}" onclick="ss('etf',${r[0]})">${r[1]}</button>`).join('')}</div><div style="display:flex;flex-wrap:wrap;gap:8px">${f('A','Montant à placer (€)')}${f('M','Versement mensuel (€)')}${f('Y','Horizon (années)')}${f('etf','Rendement brut ETF (%/an)')}${f('fee','Frais ETF (%/an)')}${f('liv','Livret A (%/an)')}${f('fe','Fonds euros (%/an)')}</div>
+${r.map((x,i)=>`<div style="margin-top:12px"><div class="ft"><b>${x[0]}</b><b class="${i==0?'up':''}">${eur(x[3])}</b></div><div style="height:8px;border-radius:5px;background:var(--bd);overflow:hidden;margin:4px 0"><div style="width:${x[3]/mx*100}%;height:100%;background:${COL[i]}"></div></div><div class="s mut">gain net ${eur(x[2])} · impôts ${eur(x[4])}</div></div>`).join('')}
+<p class="s mut">Montants nets d’impôts à la fin de l’horizon. Hypothèses 2026 : prélèvements sociaux de 18,6 % (PEA, CTO) et 17,2 % (assurance-vie) ; PEA après 5 ans sans impôt sur le revenu ; assurance-vie après 8 ans avec abattement de 4 600 € et IR à 7,5 %, sinon flat tax ; CTO à 31,4 %. Rendements constants et non garantis : ajuste les taux selon les offres du moment. Simulation indicative, pas un conseil en investissement.</p></div>
+<div class="card"><h3>Prévision de trésorerie</h3>${treso()}<p class="s mut">Projection simple : liquidités + net mensuel médian (revenus − dépenses − épargne). La fourchette reprend les quartiles 25 % / 75 % des mois observés.</p></div>`}
+function ss(k,v){S.sim=SM();S.sim[k]=num(v);save()}
+function treso(){const ks=Object.keys(S.bud||{}).sort().slice(-6);if(!ks.length)return'<p class="mut s">Renseigne ton budget (revenus et dépenses) pour obtenir une prévision.</p>';
+const nets=ks.map(k=>bm(k).r-cs(k)-epg(k)),L=liq(cur),lo=qt(nets,.25),md=qt(nets,.5),hi=qt(nets,.75);
+return`<p class="s mut">Liquidités actuelles : <b>${eur(L)}</b> · net mensuel médian : <b>${eur(md)}</b> (sur ${ks.length} mois)</p>`+[1,3,6,12].map(k=>`<div class="row" style="cursor:default"><span>Dans ${k} mois</span><span><b>${eur(L+md*k)}</b><br><span class="s mut">entre ${eur(L+lo*k)} et ${eur(L+hi*k)}</span></span></div>`).join('')}
+
 function rep(){return`<h2 style="margin:4px 0">Rapport patrimonial</h2><p class="mut s">${mlabel(cur)} · généré le ${new Date().toLocaleDateString('fr-FR')}</p><button class="btn noprint" onclick="pr()">📄 Exporter en PDF</button><p class="s mut noprint">Dans la fenêtre d’impression, choisis « Enregistrer au format PDF ». Si rien ne s’ouvre, utilise le menu Partager ou Imprimer de ton navigateur.</p><div class="card"><div class="mut">Patrimoine net</div><div class="big">${eur(tot(cur)-debt())}</div><div class="s mut">Brut ${eur(tot(cur))} · Dettes ${eur(debt())}</div></div>${kpis()}<div class="card"><h3>Évolution</h3>${chart()}</div><div class="card"><h3>Répartition</h3>${donut()}</div><div class="card"><h3>Comptes</h3>${list()}</div>${tipsCard()}${stats()}${feeCard()}`}
-const TY=[['pea','PEA'],['cto','Compte-titres'],['liv','Livret A'],['ldd','LDDS'],['lep','LEP'],['av','Assurance-vie'],['per','PER'],['cry','Crypto'],['imm','Immobilier (bien)'],['scpi','SCPI / parts de SCI'],['soc','Parts de société'],['cc','Compte courant'],['aut','Autre']];
-function mkAcc(t,n,b){const L=['pea','cto','av','per','cry'].includes(t)?['Titres','Espèces']:[['imm','scpi','soc'].includes(t)?'Valeur':'Solde'],a={id:uid(),n,ty:t,l:L.map(x=>({id:uid(),n:x}))};S.accs.push(a);ensure(cur);delete S.m[cur].c;S.m[cur].v[a.l[0].id]=num(b);snap();save();return a}
-function addCard(){return`<div class="card"><h3>Ajouter un compte</h3><select id="at" class="w" style="${SEL}" onchange="$('#an').value=this.options[this.selectedIndex].text">${TY.map(t=>`<option value="${t[0]}">${t[1]}</option>`).join('')}</select><input id="an" class="nm w" value="PEA" placeholder="Nom du compte"><input id="ab" class="nm w" inputmode="decimal" placeholder="Solde actuel (€)"><button class="btn" onclick="const n=$('#an').value.trim();if(n){mkAcc($('#at').value,n,$('#ab').value);draw()}">+ Ajouter ce compte</button></div>`}
-function snap(){const n=ym(new Date());if(cur!=n)return;S.h=S.h||[];const v=net(cur),t=Date.now(),l=S.h[S.h.length-1];if(l&&t-l.t<6e4){l.t=t;l.v=v}else S.h.push({t,v});if(S.h.length>500)S.h.shift()}
-function series(f){const now=new Date(),cm=ym(now),P=keys().filter(k=>k<cm).map(k=>[new Date(+k.slice(0,4),+k.slice(5),0,23).getTime(),f(k)]),sn=f===net?(S.h||[]).filter(x=>x.t>=new Date(now.getFullYear(),now.getMonth(),1).getTime()):[];
-if(sn.length)sn.forEach(x=>P.push([x.t,x.v]));else if(S.m[cm]&&!S.m[cm].c)P.push([+now,f(cm)]);return P.sort((a,b)=>a[0]-b[0])}
-function chart(f=net){let P=series(f);if(S.rng)P=P.filter(p=>p[0]>=Date.now()-S.rng*2.63e9);const W=320,H=140,fd=t=>new Date(t).toLocaleDateString('fr-FR',{day:'numeric',month:'short'});
-if(!P.length)return`<svg viewBox="0 0 ${W} ${H}" width="100%"><path d="M10 110C80 110 120 70 160 70S240 40 310 25" fill="none" stroke="var(--bd)" stroke-width="2" stroke-dasharray="4 5"/></svg><p class="s mut">Ta courbe se dessine dès ta première saisie, puis se met à jour à chaque modification.</p>`;
-const t0=P[0][0],t1=P[P.length-1][0],vs=P.map(p=>p[1]),mn=Math.min(...vs),mx=Math.max(...vs),rg=mx-mn||1,sp=(t1-t0)||1;
-const X=P.map(p=>[P.length>1?10+(p[0]-t0)/sp*(W-20):W/2,H-18-(p[1]-mn)/rg*(H-42)]),d=X.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join('');
-return`<svg viewBox="0 0 ${W} ${H}" width="100%"><path d="${d}L${X[X.length-1][0]} ${H-8}L${X[0][0]} ${H-8}Z" fill="var(--ac)" opacity=".14"/><path d="${d}" fill="none" stroke="var(--ac)" stroke-width="2.5" stroke-linejoin="round"/>${X.map(p=>`<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="var(--ac)"/>`).join('')}</svg><div class="ft mut s"><span>${fd(t0)}</span><span>${P.length>1?fd(t1):'première mesure'}</span></div>`}
+function pr(){try{print()}catch(e){}}
 
-IC.ai='<path d="M12 2l2.2 6.3L21 10l-6.8 1.7L12 18l-2.2-6.3L3 10l6.8-1.7z"/><circle cx="19" cy="19" r="2.5"/>';
-
+function ai(){
+  return `<h2 style="margin:4px 0 12px;font-size:28px">Assistant</h2>
+  <div id="ch" class="ch">${chatHTML()}</div>
+  <div style="height:80px"></div>
+  <div class="cin">
+    <input id="ci" placeholder="Pose ta question…" onkeydown="if(event.key=='Enter')sendAI()">
+    <button onclick="sendAI()">➤</button>
+  </div>`;
+}
+function chatHTML(){
+  return (CH.length?'':`<div class="bb ba">Bonjour ! Je suis ton assistant IA. Pose-moi une question sur ton patrimoine ou demande-moi d'ajouter une dépense.</div>`)+
+  CH.map(x=>`<div class="bb ${x.r=='u'?'bu':'ba'}">${esc(x.t||'…')}</div>`).join('');
+}
+function drawChat(){
+  const e=$('#ch');
+  if(e){
+    e.innerHTML=chatHTML();
+    scrollTo(0,document.body.scrollHeight);
+  }
+}
 async function askAI(prompt, isImg=false, imgData=null){
   if(!S.apiKey) return "⚠️ Clé API DeepSeek manquante dans Réglages.";
   if(isImg) return "⚠️ Le modèle DeepSeek ne lit pas les images pour l'instant. Écris ta demande.";
@@ -322,27 +368,6 @@ async function askAI(prompt, isImg=false, imgData=null){
     return txt;
   } catch(e) { return "❌ Erreur API : " + e.message; }
 }
-
-function chatHTML(){
-  return (CH.length?'':`<div class="bb ba">Bonjour ! Je suis ton assistant IA. Pose-moi une question sur ton patrimoine ou demande-moi d'ajouter une dépense.</div>`)+
-  CH.map(x=>`<div class="bb ${x.r=='u'?'bu':'ba'}">${esc(x.t||'…')}</div>`).join('');
-}
-function drawChat(){
-  const e=$('#ch');
-  if(e){
-    e.innerHTML=chatHTML();
-    scrollTo(0,document.body.scrollHeight);
-  }
-}
-function ai(){
-  return `<h2 style="margin:4px 0 12px;font-size:28px">Assistant</h2>
-  <div id="ch" class="ch">${chatHTML()}</div>
-  <div style="height:80px"></div>
-  <div class="cin">
-    <input id="ci" placeholder="Pose ta question…" onkeydown="if(event.key=='Enter')sendAI()">
-    <button onclick="sendAI()">➤</button>
-  </div>`;
-}
 async function sendAI(){
   const i=$('#ci'), t=i.value.trim();
   if(!t||BUSY) return;
@@ -355,6 +380,9 @@ async function sendAI(){
   drawChat();
 }
 
+// ==========================================
+// 5. ACTIONS ET NAVIGATION
+// ==========================================
 function sv(id,v,q){ensure(cur);S.m[cur].v[id]=num(v);save();if(!q)draw()}
 function sd(id,v,q){ensure(cur);S.m[cur].d[id]=num(v);save();if(!q)draw()}
 const A=id=>S.accs.find(x=>x.id==id);
@@ -365,9 +393,8 @@ function addAcc(){const n=prompt('Nom du compte ?');if(!n)return;S.accs.push({id
 function da(a){if(confirm('Supprimer ?')){S.accs=S.accs.filter(x=>x.id!=a);save();go('accs')}}
 function setM(m){if(!m)return;cur=m;ensure(m);draw()}
 function go(t){tab=t;draw();scrollTo(0,0)}
-function set(){return`<div class="card"><h3>Clé API DeepSeek</h3><input type="password" value="${esc(S.apiKey)}" placeholder="sk-..." onchange="S.apiKey=this.value;save()"></div><div class="card"><h3>Sauvegarde</h3><button class="btn primary" onclick="exportData()">Exporter</button><label class="btn" style="display:block;text-align:center;cursor:pointer">Restaurer<input type="file" accept=".json" hidden onchange="importData(this)"></label></div>`}
-function exportData(){let d="data:text/json;charset=utf-8,"+encodeURIComponent(JSON.stringify(S));let a=document.createElement('a');a.href=d;a.download='sauvegarde.json';a.click()}
-function importData(i){let f=i.files[0];if(!f)return;let r=new FileReader();r.onload=e=>{try{let d=JSON.parse(e.target.result);if(d.accs){S=d;save();alert('Restauré !')}}catch(x){alert('Erreur')}};r.readAsText(f)}
+
+function drawer(o){const e=document.getElementById('dr');if(!o){e.innerHTML='';return}e.innerHTML=`<div class="dro" onclick="drawer(0)"></div><div class="drp"><h2 style="margin:0 0 10px;color:var(--ac)">Menu</h2>${[['home','🏠 Synthèse'],['accs','💳 Comptes'],['bud','🥧 Budget'],['cred','🏦 Crédits'],['tax','🧾 Impôts'],['sim','🧮 Simulateurs'],['ana','🔍 Analyse'],['ai','✨ Assistant'],['set','⚙️ Réglages']].map(m=>`<button class="dri ${m[0]==tab?'on':''}" onclick="drawer(0);go('${m[0]}')"><span>${m[1]}</span></button>`).join('')}</div>`}
 
 function draw(){
   try {
@@ -400,12 +427,9 @@ function draw(){
   }
 }
 
-function acc(a){const p=prv(cur);return`<button class="btn" style="margin:0 0 14px" onclick="go('accs')">← Comptes</button><div class="card"><div class="mut">${esc(a.n)}</div><div class="big">${eur(at(cur,a))}</div><div>${p?gtxt(gain(cur,a),at(p,a)):''}</div></div><div class="card"><h3>Lignes</h3>${a.l.map(l=>`<div class="ln"><input class="nm" value="${esc(l.n)}" onchange="rn('${a.id}','${l.id}',this.value)"><input class="vl" inputmode="decimal" value="${lv(cur,l.id)||''}" placeholder="0" oninput="sv('${l.id}',this.value,1)" onchange="sv('${l.id}',this.value)"><button class="x" onclick="dl('${a.id}','${l.id}')">×</button></div>`).join('')}<button class="btn" onclick="al('${a.id}')">+ Ligne</button></div><div class="card"><h3>Versement</h3><input class="vl w" inputmode="decimal" value="${dep(cur,a)||''}" placeholder="0" oninput="sd('${a.id}',this.value,1)" onchange="sd('${a.id}',this.value)"></div><button class="btn red" onclick="da('${a.id}')">Supprimer</button>`}
-function accs(){return`<div class="card"><h3>Mes Comptes</h3>${list()}</div>`+addCard()}
-function tax(){return`<div class="card"><h3>Simulateur d'Impôt</h3><input id="taxRev" type="number" placeholder="Revenu net imposable (€)" oninput="calcT()"><div class="big" id="taxOut" style="text-align:center;margin-top:12px">0 €</div></div><div class="card"><h3>Plafonds</h3><div class="row" style="cursor:default"><span>PEA</span><b>${eur(150000)}</b></div><div class="row" style="cursor:default"><span>Livret A</span><b>${eur(22950)}</b></div></div>`}
-function calcT(){let q=num($('#taxRev').value),tax=0,prev=0;for(let b of [[11600,0],[29579,.11],[84577,.3],[181917,.41],[1e12,.45]]){let tx=Math.max(0,Math.min(q,b[0])-prev);tax+=tx*b[1];prev=b[0];if(q<=b[0])break}if(tax<2500)tax-=Math.max(0,897-0.4525*tax);$('#taxOut').textContent=eur(Math.max(0,Math.round(tax)))}
+function quick(){return`<button class="back" onclick="go('accs')">← Comptes</button><div class="card"><h3>Mise à jour rapide · ${mlabel(cur)}</h3><p class="s mut" style="margin:0">Mets à jour tous tes soldes d’un coup. Total : <b>${eur(tot(cur))}</b></p></div>`+S.accs.map((a,i)=>`<div class="card"><div class="ft"><b><i class="dot" style="background:${COL[i%6]}"></i>${esc(a.n)}</b><b>${eur(at(cur,a))}</b></div>${a.l.map(l=>`<div class="ln" style="margin-top:8px"><span style="flex:1;align-self:center" class="s">${esc(l.n)}</span><input class="vl" inputmode="decimal" value="${lv(cur,l.id)||''}" placeholder="0" oninput="sv('${l.id}',this.value,1)" onchange="sv('${l.id}',this.value)"></div>`).join('')}<div class="ln" style="margin-top:8px"><span style="flex:1;align-self:center" class="s mut">Versement du mois</span><input class="vl" inputmode="decimal" value="${dep(cur,a)||''}" placeholder="0" oninput="sd('${a.id}',this.value,1)" onchange="sd('${a.id}',this.value)"></div><button class="btn" style="margin-top:8px" onclick="al('${a.id}')">+ Ajouter un titre ou une ligne</button></div>`).join('')}
 
-function drawer(o){const e=document.getElementById('dr');if(!o){e.innerHTML='';return}e.innerHTML=`<div class="dro" onclick="drawer(0)"></div><div class="drp"><h2 style="margin:0 0 10px;color:var(--ac)">Menu</h2>${[['home','🏠 Synthèse'],['accs','💳 Comptes'],['bud','🥧 Budget'],['cred','🏦 Crédits'],['tax','🧾 Impôts'],['sim','🧮 Simulateurs'],['ana','🔍 Analyse'],['ai','✨ Assistant'],['set','⚙️ Réglages']].map(m=>`<button class="dri ${m[0]==tab?'on':''}" onclick="drawer(0);go('${m[0]}')"><span>${m[1]}</span></button>`).join('')}</div>`}
-
-ensure(cur);draw();
+// LANCEMENT
+ensure(cur);
+draw();
 </script></body></html>
