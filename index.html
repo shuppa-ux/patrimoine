@@ -51,7 +51,7 @@ window.onerror = function(m, s, l, c, e) {
 </script>
 </head><body><div id="app"></div><button id="fab" onclick="go('quick')" style="display:none">+</button><nav id="nav"></nav><div id="dr"></div>
 <script id="app-js">
-const K='patrimoine-v16',COL=['#f0c08a','#3ccf86','#6f7bf0','#d46bd8','#f2813c','#2fb5c9'];
+const K='patrimoine-v17',COL=['#f0c08a','#3ccf86','#6f7bf0','#d46bd8','#f2813c','#2fb5c9'];
 const $=s=>document.querySelector(s);
 function def(){return{accs:[{id:'pea',n:'PEA',l:[{id:'pea1',n:'Titres'},{id:'pea2',n:'Espèces'}]},{id:'cto1',n:'CTO – part 1',l:[{id:'c11',n:'Titres'},{id:'c12',n:'Espèces'}]},{id:'cto2',n:'CTO – part 2',l:[{id:'c21',n:'Titres'},{id:'c22',n:'Espèces'}]},{id:'liv',n:'Livret A',l:[{id:'liv1',n:'Solde'}]}],m:{},apiKey:''}}
 function load(){try{const r=localStorage.getItem(K);if(r){const o=JSON.parse(r);if(o&&Array.isArray(o.accs)&&o.m&&typeof o.m=='object')return o}}catch(e){}return def()}
